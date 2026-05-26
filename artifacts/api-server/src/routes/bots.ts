@@ -1,0 +1,118 @@
+import { Router, type IRouter } from "express";
+import { botManager } from "../bot/BotManager.js";
+import { listStructures } from "../bot/structures/StructureRegistry.js";
+import { logger } from "../lib/logger.js";
+
+const router: IRouter = Router();
+
+router.get("/bots", (_req, res) => {
+  res.json({ bots: botManager.getAllStatuses() });
+});
+
+router.post("/bots", async (req, res) => {
+  const { host, port, username, version, auth, llm, behavior } = req.body as Record<string, unknown>;
+
+  if (!host || typeof host !== "string") {
+    res.status(400).json({ error: "host is required" });
+    return;
+  }
+  if (!username || typeof username !== "string") {
+    res.status(400).json({ error: "username is required" });
+    return;
+  }
+  if (!llm || typeof llm !== "object") {
+    res.status(400).json({ error: "llm config is required" });
+    return;
+  }
+
+  const llmConfig = llm as { provider?: string; model?: string };
+  if (!llmConfig.provider || !llmConfig.model) {
+    res.status(400).json({ error: "llm.provider and llm.model are required" });
+    return;
+  }
+
+  if (!["ollama", "openai", "anthropic"].includes(llmConfig.provider)) {
+    res.status(400).json({ error: "llm.provider must be ollama, openai, or anthropic" });
+    return;
+  }
+
+  try {
+    const bot = await botManager.createBot({
+      host,
+      port: typeof port === "number" ? port : 25565,
+      username,
+      version: typeof version === "string" ? version : undefined,
+      auth: auth === "microsoft" ? "microsoft" : "offline",
+      llm: llm as Parameters<typeof botManager.createBot>[0]["llm"],
+      behavior: behavior as Parameters<typeof botManager.createBot>[0]["behavior"],
+    });
+
+    res.status(201).json({ bot: bot.getStatus() });
+  } catch (err) {
+    logger.error({ err }, "Failed to create bot");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to connect bot" });
+  }
+});
+
+router.get("/bots/:id", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) {
+    res.status(404).json({ error: "Bot not found" });
+    return;
+  }
+  res.json({ bot: bot.getStatus() });
+});
+
+router.delete("/bots/:id", (req, res) => {
+  const removed = botManager.removeBot(req.params["id"]!);
+  if (!removed) {
+    res.status(404).json({ error: "Bot not found" });
+    return;
+  }
+  res.json({ success: true });
+});
+
+router.post("/bots/:id/command", async (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) {
+    res.status(404).json({ error: "Bot not found" });
+    return;
+  }
+
+  const { command, args } = req.body as { command?: string; args?: Record<string, unknown> };
+  if (!command || typeof command !== "string") {
+    res.status(400).json({ error: "command is required" });
+    return;
+  }
+
+  try {
+    await bot.sendCommand(command, args ?? {});
+    res.json({ success: true, status: bot.getStatus() });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Command failed" });
+  }
+});
+
+router.get("/bots/:id/inventory", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) {
+    res.status(404).json({ error: "Bot not found" });
+    return;
+  }
+  res.json({ inventory: bot.getStatus().inventory });
+});
+
+router.get("/bots/:id/chat", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) {
+    res.status(404).json({ error: "Bot not found" });
+    return;
+  }
+  res.json({ chat: bot.getStatus().chatHistory });
+});
+
+router.get("/structures", (_req, res) => {
+  res.json({ structures: listStructures().map((s) => ({ name: s.name, displayName: s.displayName, width: s.width, height: s.height, depth: s.depth })) });
+});
+
+export default router;

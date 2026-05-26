@@ -1,0 +1,1 @@
+- [Mindcraft bot architecture](mindcraft-arch.md) — dual-brain Minecraft AI: FastBrain (state machine) + SlowBrain (LLM, event-driven only); mineflayer + pathfinder are esbuild-external.
