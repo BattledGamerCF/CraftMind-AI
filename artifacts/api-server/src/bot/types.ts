@@ -102,6 +102,38 @@ export interface BotStatus {
   cognitiveMode: CognitiveMode;
 }
 
+export type PromptProfileKey =
+  | "lightweight"
+  | "balanced"
+  | "combat"
+  | "planning"
+  | "social"
+  | "builder"
+  | "deep-reasoning";
+
+export interface MemoryBudget {
+  chatHistorySize: number;
+  episodicEvents: number;
+  semanticLocations: number;
+  shortTermEntries: number;
+}
+
+export interface CognitiveDecision {
+  selectedMode: CognitiveMode;
+  effectiveMode: Exclude<CognitiveMode, "auto">;
+  promptProfile: PromptProfileKey;
+  tokenBudget: number;
+  memoryBudget: MemoryBudget;
+  deterministicAllowed: boolean;
+  fallbackStrategy: "clarify" | "downgrade" | "ignore";
+  reasoningDepth: "shallow" | "medium" | "deep";
+}
+
+export interface CanonicalIntent extends LLMIntent {
+  confidence: number;
+  source: "deterministic" | "llm" | "cache";
+}
+
 export interface CreateBotRequest {
   host: string;
   port?: number;

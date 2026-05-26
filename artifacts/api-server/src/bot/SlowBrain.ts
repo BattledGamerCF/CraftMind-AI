@@ -1,121 +1,59 @@
 import type { LLMProvider } from "./llm/LLMProvider.js";
-import type { LLMIntent, LLMMessage, CognitiveMode } from "./types.js";
+import type { CanonicalIntent, CognitiveDecision, LLMMessage } from "./types.js";
+import { getPromptProfile } from "./cognition/PromptProfiles.js";
 import { logger } from "../lib/logger.js";
 
-// ── Prompt variants ──────────────────────────────────────────────────────────
+const INTENTS_NEEDING_TARGET = new Set([
+  "follow_player", "mine_resource", "build_structure", "come_here",
+]);
 
-const INTENTS_BLOCK = `idle|follow_player|mine_resource|build_structure|explore|come_here|stop|gather_food|report_status|defend_self`;
+function scoreConfidence(parsed: Partial<CanonicalIntent>): number {
+  if (!parsed.intent) return 0;
+  const needsTarget = INTENTS_NEEDING_TARGET.has(parsed.intent);
+  if (needsTarget && !parsed.target) return 0.65;
+  return 0.85;
+}
 
-const SYSTEM_PROMPT_FULL = `You are a Minecraft bot companion. You are helpful, concise, and action-oriented.
-
-When a player talks to you, respond with a JSON object describing what you should do.
-
-Available intents: ${INTENTS_BLOCK}
-Targets: follow_player/come_here → player name | mine_resource → wood/stone/coal/iron/diamond | build_structure → oak_cabin/simple_shelter
-
-Response format (JSON ONLY):
-{"intent":"<intent>","target":"<optional>","chat":"<max 12 words>","params":{}}
-
-Rules: JSON only. Short natural chat. Prefer action over explanation. Talk like a slightly awkward but helpful player.`;
-
-const SYSTEM_PROMPT_COMPACT = `Minecraft bot. Reply JSON only.
-Intents: ${INTENTS_BLOCK}
-Format: {"intent":"...","target":"...","chat":"...","params":{}}
-Keep chat ≤8 words. Action > explanation.`;
-
-const SYSTEM_PROMPT_DEEP = `You are a Minecraft bot companion with full planning capability.
-
-When a player talks to you, return a JSON object. Think carefully about complex, multi-step, or novel requests before responding.
-
-Available intents: ${INTENTS_BLOCK}
-Targets: follow_player/come_here → player name | mine_resource → wood/stone/coal/iron/diamond | build_structure → oak_cabin/simple_shelter
-
-Response format (JSON ONLY):
-{"intent":"<intent>","target":"<optional>","chat":"<max 15 words, allowed to be more descriptive>","params":{}}
-
-Rules:
-- JSON only. No extra text.
-- For complex tasks, pick the best single intent that starts the chain.
-- Use params to convey additional context (count, location hints, etc).
-- Talk like a knowledgeable but slightly awkward player.`;
-
-// ── Auto-mode escalation heuristics ─────────────────────────────────────────
-
-interface AutoCtx {
+export interface SlowBrainContext {
   health: number;
   food: number;
   state: string;
-  message: string;
+  nearbyPlayers: string[];
+  inventory: string[];
+  position: { x: number; y: number; z: number } | null;
+  episodicSummary?: string;
+  semanticSummary?: string;
 }
-
-function selectAutoMode(ctx: AutoCtx): Exclude<CognitiveMode, "auto"> {
-  const msg = ctx.message.toLowerCase();
-
-  // Urgent / reactive — skip heavy reasoning
-  if (ctx.state === "combat" || ctx.state === "fleeing" || ctx.health < 6) {
-    return "lightweight";
-  }
-
-  // Signs of a complex/novel request → escalate
-  const complexSignals = [
-    /build.*(?:town|city|castle|fortress|farm|village|mine|base)/,
-    /integrat|coordin|strateg|plan|design|optimiz/,
-    /multiple|several|all|every/,
-    /biome|terrain|mountain|valley/,
-  ];
-  if (complexSignals.some((r) => r.test(msg)) || msg.split(" ").length > 12) {
-    return "deep-reasoning";
-  }
-
-  // Short, clear, known-keyword messages → lightweight
-  const simpleKeywords = /^(stop|follow|come|mine|build|explore|eat|status|defend|report)\b/;
-  if (msg.split(" ").length <= 4 && simpleKeywords.test(msg.trim())) {
-    return "lightweight";
-  }
-
-  return "balanced";
-}
-
-// ── SlowBrain ────────────────────────────────────────────────────────────────
 
 export class SlowBrain {
   private llm: LLMProvider;
-  private mode: CognitiveMode;
+  private mode: import("./types.js").CognitiveMode;
   private conversationHistory: LLMMessage[] = [];
-  private maxHistory = 10;
+  private readonly maxHistory = 10;
   private processing = false;
   private lastProcessedTime = 0;
-  private minProcessInterval = 1500;
+  private readonly minProcessInterval = 1500;
 
-  constructor(llm: LLMProvider, mode: CognitiveMode = "balanced") {
+  constructor(llm: LLMProvider, mode: import("./types.js").CognitiveMode = "balanced") {
     this.llm = llm;
     this.mode = mode;
   }
 
-  setMode(mode: CognitiveMode) {
+  setMode(mode: import("./types.js").CognitiveMode) {
     this.mode = mode;
     logger.info({ mode }, "SlowBrain cognitive mode changed");
   }
 
-  getMode(): CognitiveMode {
+  getMode(): import("./types.js").CognitiveMode {
     return this.mode;
   }
 
   async processChat(
     playerName: string,
     message: string,
-    context: {
-      health: number;
-      food: number;
-      state: string;
-      nearbyPlayers: string[];
-      inventory: string[];
-      position: { x: number; y: number; z: number } | null;
-    }
-  ): Promise<LLMIntent | null> {
-    // Deterministic: skip LLM entirely
-    if (this.mode === "deterministic") return null;
-
+    context: SlowBrainContext,
+    decision: CognitiveDecision
+  ): Promise<CanonicalIntent | null> {
     if (this.processing) return null;
     const now = Date.now();
     if (now - this.lastProcessedTime < this.minProcessInterval) return null;
@@ -124,32 +62,23 @@ export class SlowBrain {
     this.lastProcessedTime = now;
 
     try {
-      // Resolve effective mode for this call
-      const effectiveMode: Exclude<CognitiveMode, "auto"> =
-        this.mode === "auto"
-          ? selectAutoMode({ health: context.health, food: context.food, state: context.state, message })
-          : this.mode;
+      const systemPrompt = getPromptProfile(decision.promptProfile);
+      const historyWindow = decision.memoryBudget.chatHistorySize;
+      const contextStr = this.buildContextString(context, decision);
 
-      const { systemPrompt, maxTokens, historyLen } = this.getModeConfig(effectiveMode);
-
-      const contextStr = this.buildContextString(context, effectiveMode);
       const userMessage: LLMMessage = {
         role: "user",
         content: `[Context]\n${contextStr}\n\n[${playerName}]: ${message}`,
       };
-
-      const trimmedHistory = this.conversationHistory.slice(-historyLen);
-      trimmedHistory.push(userMessage);
 
       this.conversationHistory.push(userMessage);
       if (this.conversationHistory.length > this.maxHistory) {
         this.conversationHistory = this.conversationHistory.slice(-this.maxHistory);
       }
 
-      logger.debug({ effectiveMode, playerName }, "SlowBrain processing chat");
+      const trimmedHistory = this.conversationHistory.slice(-Math.max(historyWindow, 1));
+      logger.debug({ profile: decision.promptProfile, historyWindow, playerName }, "SlowBrain processing");
 
-      // maxTokens is advisory — respected by providers that support it in a future extension
-      void maxTokens;
       const response = await this.llm.chat(trimmedHistory, systemPrompt);
 
       const assistantMessage: LLMMessage = { role: "assistant", content: response };
@@ -164,52 +93,52 @@ export class SlowBrain {
     }
   }
 
-  private getModeConfig(mode: Exclude<CognitiveMode, "auto">): {
-    systemPrompt: string;
-    maxTokens: number | undefined;
-    historyLen: number;
-  } {
-    switch (mode) {
-      case "deterministic":
-        return { systemPrompt: "", maxTokens: 0, historyLen: 0 };
-      case "lightweight":
-        return { systemPrompt: SYSTEM_PROMPT_COMPACT, maxTokens: 120, historyLen: 4 };
-      case "deep-reasoning":
-        return { systemPrompt: SYSTEM_PROMPT_DEEP, maxTokens: 800, historyLen: 10 };
-      case "balanced":
-      default:
-        return { systemPrompt: SYSTEM_PROMPT_FULL, maxTokens: undefined, historyLen: 6 };
-    }
-  }
+  private buildContextString(context: SlowBrainContext, decision: CognitiveDecision): string {
+    const budget = decision.memoryBudget;
+    const isCompact = decision.effectiveMode === "lightweight";
 
-  private buildContextString(
-    context: { health: number; food: number; state: string; nearbyPlayers: string[]; inventory: string[]; position: { x: number; y: number; z: number } | null },
-    mode: Exclude<CognitiveMode, "auto">
-  ): string {
-    if (mode === "lightweight") {
-      // Minimal context to keep prompt short
+    if (isCompact) {
       return [
         `State:${context.state} HP:${context.health} Food:${context.food}`,
-        context.nearbyPlayers.length ? `Players:${context.nearbyPlayers.join(",")}` : "",
+        context.nearbyPlayers.length ? `Players:${context.nearbyPlayers.slice(0, 3).join(",")}` : "",
       ].filter(Boolean).join(" ");
     }
 
-    return [
+    const inventoryLimit = decision.effectiveMode === "deep-reasoning" ? 12 : 6;
+    const lines = [
       `State: ${context.state}`,
       `Health: ${context.health}/20, Food: ${context.food}/20`,
       `Nearby players: ${context.nearbyPlayers.join(", ") || "none"}`,
-      `Inventory: ${context.inventory.slice(0, mode === "deep-reasoning" ? 12 : 6).join(", ") || "empty"}`,
-      context.position ? `Position: ${Math.floor(context.position.x)}, ${Math.floor(context.position.y)}, ${Math.floor(context.position.z)}` : "",
-    ].filter(Boolean).join("\n");
+      `Inventory: ${context.inventory.slice(0, inventoryLimit).join(", ") || "empty"}`,
+      context.position
+        ? `Position: ${Math.floor(context.position.x)}, ${Math.floor(context.position.y)}, ${Math.floor(context.position.z)}`
+        : "",
+    ];
+
+    if (budget.episodicEvents > 0 && context.episodicSummary) {
+      lines.push(`Recent events: ${context.episodicSummary}`);
+    }
+    if (budget.semanticLocations > 0 && context.semanticSummary) {
+      lines.push(`Known locations: ${context.semanticSummary}`);
+    }
+
+    return lines.filter(Boolean).join("\n");
   }
 
-  private parseIntent(response: string): LLMIntent | null {
+  private parseIntent(response: string): CanonicalIntent | null {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return null;
-      const parsed = JSON.parse(jsonMatch[0]) as LLMIntent;
+      const parsed = JSON.parse(jsonMatch[0]) as Partial<CanonicalIntent>;
       if (!parsed.intent) return null;
-      return parsed;
+      return {
+        intent: parsed.intent,
+        target: parsed.target,
+        chat: parsed.chat,
+        params: parsed.params,
+        confidence: scoreConfidence(parsed),
+        source: "llm",
+      };
     } catch {
       logger.warn({ response }, "Failed to parse LLM intent");
       return null;

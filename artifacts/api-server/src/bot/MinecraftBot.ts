@@ -1,36 +1,16 @@
 import mineflayer from "mineflayer";
 import type { Bot } from "mineflayer";
-import type { BotConfig, BotStatus, CognitiveMode, LLMIntent } from "./types.js";
+import type { BotConfig, BotStatus, CanonicalIntent, CognitiveMode, LLMIntent } from "./types.js";
 import { FastBrain } from "./FastBrain.js";
 import { SlowBrain } from "./SlowBrain.js";
 import { createLLMProvider } from "./llm/ProviderFactory.js";
 import { sharedWorldModel, type BotRole } from "./core/SharedWorldModel.js";
+import { CognitiveRouter, IntentCache, CognitionTelemetry } from "./cognition/index.js";
+import { estimateProfileTokens } from "./cognition/PromptProfiles.js";
 import { logger } from "../lib/logger.js";
 
-/**
- * Parse a player chat message into a deterministic LLMIntent using keyword matching.
- * Used when cognitiveMode === "deterministic" to skip the LLM entirely.
- */
-function parseLocalIntent(message: string): LLMIntent | null {
-  const m = message.toLowerCase().trim();
-  if (/\bstop\b/.test(m)) return { intent: "stop" };
-  if (/\bfollow\b/.test(m)) return { intent: "follow_player" };
-  if (/\bcome\b/.test(m)) return { intent: "come_here" };
-  if (/\bexplore\b/.test(m)) return { intent: "explore" };
-  if (/\b(status|report)\b/.test(m)) return { intent: "report_status" };
-  if (/\b(defend|fight|attack)\b/.test(m)) return { intent: "defend_self" };
-  if (/\b(eat|food|hungry)\b/.test(m)) return { intent: "gather_food" };
-  const mineMatch = m.match(/\bmine\b.*?\b(wood|stone|coal|iron|diamond|log)\b/);
-  if (mineMatch) return { intent: "mine_resource", target: mineMatch[1] };
-  if (/\bmine\b/.test(m)) return { intent: "mine_resource", target: "wood" };
-  const buildMatch = m.match(/\bbuild\b.*?\b(cabin|shelter|oak_cabin|simple_shelter)\b/);
-  if (buildMatch) {
-    const target = /cabin/.test(buildMatch[1] ?? "") ? "oak_cabin" : "simple_shelter";
-    return { intent: "build_structure", target };
-  }
-  if (/\bbuild\b/.test(m)) return { intent: "build_structure", target: "simple_shelter" };
-  return null;
-}
+const CONFIDENCE_CLARIFY_THRESHOLD = 0.4;
+const CONFIDENCE_IGNORE_THRESHOLD = 0.2;
 
 export class MinecraftBot {
   readonly id: string;
@@ -39,6 +19,9 @@ export class MinecraftBot {
   private slowBrain: SlowBrain;
   private config: BotConfig;
   private role: BotRole;
+  private router: CognitiveRouter;
+  private intentCache: IntentCache;
+  cognitionTelemetry: CognitionTelemetry;
   connected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -50,10 +33,14 @@ export class MinecraftBot {
     this.role = role;
     const llm = createLLMProvider(config.llm);
     this.slowBrain = new SlowBrain(llm, config.cognitiveMode ?? "balanced");
+    this.router = new CognitiveRouter();
+    this.intentCache = new IntentCache();
+    this.cognitionTelemetry = new CognitionTelemetry();
   }
 
   setMode(mode: CognitiveMode) {
     this.slowBrain.setMode(mode);
+    this.router.reset(); // clear hysteresis on explicit API change
   }
 
   getMode(): CognitiveMode {
@@ -78,34 +65,22 @@ export class MinecraftBot {
     this.fastBrain = new FastBrain(this.bot, this.config.behavior);
 
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Connection timeout"));
-      }, 30000);
+      const timeout = setTimeout(() => { reject(new Error("Connection timeout")); }, 30000);
 
       this.bot!.once("spawn", async () => {
         clearTimeout(timeout);
         this.connected = true;
         this.reconnectAttempts = 0;
         logger.info({ id: this.id }, "Bot spawned");
-
         await this.fastBrain!.setup(async (username, message) => {
           await this.handleChat(username, message);
         });
-
         sharedWorldModel.registerBot({ id: this.id, username: this.config.username, role: this.role });
-
         resolve();
       });
 
-      this.bot!.once("error", (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-
-      this.bot!.once("kicked", (reason) => {
-        clearTimeout(timeout);
-        reject(new Error(`Kicked: ${reason}`));
-      });
+      this.bot!.once("error", (err) => { clearTimeout(timeout); reject(err); });
+      this.bot!.once("kicked", (reason) => { clearTimeout(timeout); reject(new Error(`Kicked: ${reason}`)); });
     });
 
     this.setupEventHandlers();
@@ -123,20 +98,13 @@ export class MinecraftBot {
         const delay = Math.min(5000 * this.reconnectAttempts, 30000);
         logger.info({ id: this.id, attempt: this.reconnectAttempts, delay }, "Reconnecting...");
         setTimeout(() => {
-          this.connect().catch((err) => {
-            logger.error({ err, id: this.id }, "Reconnect failed");
-          });
+          this.connect().catch((err) => logger.error({ err, id: this.id }, "Reconnect failed"));
         }, delay);
       }
     });
 
-    this.bot.on("error", (err) => {
-      logger.error({ err, id: this.id }, "Bot error");
-    });
-
-    this.bot.on("kicked", (reason) => {
-      logger.warn({ id: this.id, reason }, "Bot kicked");
-    });
+    this.bot.on("error", (err) => logger.error({ err, id: this.id }, "Bot error"));
+    this.bot.on("kicked", (reason) => logger.warn({ id: this.id, reason }, "Bot kicked"));
   }
 
   private async handleChat(username: string, message: string) {
@@ -144,74 +112,165 @@ export class MinecraftBot {
 
     const lowerMsg = message.toLowerCase();
     const botName = this.bot.username.toLowerCase();
-
     const isAddressed =
-      lowerMsg.includes(botName) ||
-      lowerMsg.startsWith("!") ||
-      lowerMsg.startsWith("@all") ||
-      message.startsWith(".");
-
+      lowerMsg.includes(botName) || lowerMsg.startsWith("!") ||
+      lowerMsg.startsWith("@all") || message.startsWith(".");
     if (!isAddressed) return;
 
     const cleanMessage = message
       .replace(new RegExp(botName, "gi"), "")
       .replace(/^[!.@]/, "")
       .trim();
-
     if (!cleanMessage) return;
 
-    logger.debug({ username, message: cleanMessage, mode: this.slowBrain.getMode() }, "Processing player message");
+    const routeStart = Date.now();
 
-    // Deterministic mode: parse locally, skip LLM
-    if (this.slowBrain.getMode() === "deterministic") {
-      const intent = parseLocalIntent(cleanMessage);
-      if (intent && this.fastBrain) {
-        this.fastBrain.memory.episodic.record({
-          kind: "player_interaction",
-          description: `${username}: "${cleanMessage}" → ${intent.intent} (deterministic)`,
-          participants: [username],
-        });
-        this.fastBrain.submitIntent(intent);
+    // Build routing context
+    const botState = this.fastBrain.state;
+    const decision = this.router.route({
+      message: cleanMessage,
+      health: this.bot.health,
+      food: this.bot.food,
+      state: botState,
+      configuredMode: this.slowBrain.getMode(),
+    });
+
+    logger.debug({ username, effectiveMode: decision.effectiveMode, profile: decision.promptProfile }, "CognitiveRouter decision");
+
+    // Cache lookup (skip for deep-reasoning — context too variable)
+    if (decision.effectiveMode !== "deep-reasoning") {
+      const cached = this.intentCache.get(cleanMessage);
+      if (cached) {
+        this.recordTelemetry(cached, decision, routeStart, true);
+        this.submitIntent(cached, username, cleanMessage);
+        return;
       }
-      return;
     }
+
+    // Deterministic fast path
+    if (decision.deterministicAllowed) {
+      const det = CognitiveRouter.parseDeterministic(cleanMessage);
+      if (det) {
+        this.intentCache.set(cleanMessage, det);
+        this.recordTelemetry(det, decision, routeStart, false);
+        this.submitIntent(det, username, cleanMessage);
+        return;
+      }
+      // Deterministic parse failed — if mode is strictly deterministic, apply fallback
+      if (decision.effectiveMode === "deterministic") {
+        await this.applyFallback(decision.fallbackStrategy, username);
+        return;
+      }
+      // lightweight: fall through to LLM
+    }
+
+    // LLM path
+    const budget = decision.memoryBudget;
+    const episodicSummary = budget.episodicEvents > 0
+      ? this.fastBrain.memory.episodic.recent(budget.episodicEvents)
+          .map((e) => e.description).join("; ")
+      : undefined;
+    const semanticSummary = budget.semanticLocations > 0
+      ? this.fastBrain.memory.semantic.snapshot().locations
+          .slice(0, budget.semanticLocations)
+          .map((l) => `${l.name}@${Math.floor(l.position.x)},${Math.floor(l.position.z)}`)
+          .join("; ")
+      : undefined;
 
     try {
       const intent = await this.slowBrain.processChat(username, cleanMessage, {
         health: this.bot.health,
         food: this.bot.food,
-        state: this.fastBrain.state,
+        state: botState,
         nearbyPlayers: this.fastBrain.social.getNearbyPlayers(),
         inventory: this.fastBrain.inventory.getItems().map((i) => `${i.name}x${i.count}`),
         position: this.bot.entity?.position
           ? { x: this.bot.entity.position.x, y: this.bot.entity.position.y, z: this.bot.entity.position.z }
           : null,
-      });
+        episodicSummary,
+        semanticSummary,
+      }, decision);
 
-      if (intent) {
-        this.fastBrain.memory.episodic.record({
-          kind: "player_interaction",
-          description: `${username}: "${cleanMessage}" → ${intent.intent}`,
-          participants: [username],
-        });
-        this.fastBrain.submitIntent(intent);
+      if (!intent) return;
+
+      // Confidence gating
+      if (intent.confidence < CONFIDENCE_IGNORE_THRESHOLD) {
+        logger.debug({ confidence: intent.confidence }, "Intent ignored: confidence too low");
+        this.recordTelemetry(intent, decision, routeStart, false);
+        return;
       }
+
+      if (intent.confidence < CONFIDENCE_CLARIFY_THRESHOLD) {
+        // Try deterministic downgrade before applying fallback strategy
+        const det = CognitiveRouter.parseDeterministic(cleanMessage);
+        if (det) {
+          this.intentCache.set(cleanMessage, det);
+          this.recordTelemetry(det, decision, routeStart, false);
+          this.submitIntent(det, username, cleanMessage);
+          return;
+        }
+        await this.applyFallback(decision.fallbackStrategy, username);
+        this.recordTelemetry(intent, decision, routeStart, false);
+        return;
+      }
+
+      this.intentCache.set(cleanMessage, intent);
+      this.recordTelemetry(intent, decision, routeStart, false);
+      this.submitIntent(intent, username, cleanMessage);
     } catch (err) {
       logger.error({ err }, "Chat handling error");
     }
+  }
+
+  private submitIntent(intent: CanonicalIntent | LLMIntent, username: string, message: string) {
+    if (!this.fastBrain) return;
+    this.fastBrain.memory.episodic.record({
+      kind: "player_interaction",
+      description: `${username}: "${message}" → ${"intent" in intent ? intent.intent : "?"} (${"source" in intent ? intent.source : "llm"})`,
+      participants: [username],
+    });
+    this.fastBrain.submitIntent(intent as LLMIntent);
+  }
+
+  private async applyFallback(strategy: "clarify" | "downgrade" | "ignore", username: string) {
+    if (strategy === "clarify" && this.fastBrain) {
+      const clarifications = [
+        `Not quite sure what you mean, ${username}.`,
+        "Could you be more specific?",
+        "Hmm, say that again?",
+      ];
+      const msg = clarifications[Math.floor(Math.random() * clarifications.length)]!;
+      await this.fastBrain.social.say(msg).catch(() => {});
+    }
+    // downgrade and ignore: do nothing (deterministic fallback already tried above)
+  }
+
+  private recordTelemetry(
+    intent: CanonicalIntent | { confidence: number; source: "deterministic" | "llm" | "cache" },
+    decision: import("./types.js").CognitiveDecision,
+    startMs: number,
+    cacheHit: boolean
+  ) {
+    this.cognitionTelemetry.record({
+      effectiveMode: decision.effectiveMode,
+      promptTokens: cacheHit ? 0 : estimateProfileTokens(decision.promptProfile),
+      routingLatencyMs: Date.now() - startMs,
+      confidence: (intent as CanonicalIntent).confidence ?? 1,
+      source: cacheHit ? "cache" : (intent as CanonicalIntent).source ?? "llm",
+      deepReasoning: decision.effectiveMode === "deep-reasoning",
+    });
   }
 
   async sendCommand(command: string, args: Record<string, unknown> = {}): Promise<void> {
     if (!this.fastBrain) throw new Error("Bot not connected");
 
     const intentMap: Record<string, () => LLMIntent | null> = {
-      stop: () => ({ intent: "stop" }),
-      follow: () => ({ intent: "follow_player", target: args["player"] as string | undefined }),
-      mine: () => ({ intent: "mine_resource", target: (args["resource"] as string) ?? "wood", params: args["count"] !== undefined ? { count: args["count"] } : undefined }),
-      build: () => ({ intent: "build_structure", target: (args["structure"] as string) ?? "simple_shelter" }),
+      stop:    () => ({ intent: "stop" }),
+      follow:  () => ({ intent: "follow_player", target: args["player"] as string | undefined }),
+      mine:    () => ({ intent: "mine_resource", target: (args["resource"] as string) ?? "wood", params: args["count"] !== undefined ? { count: args["count"] } : undefined }),
+      build:   () => ({ intent: "build_structure", target: (args["structure"] as string) ?? "simple_shelter" }),
       explore: () => ({ intent: "explore" }),
-      come: () => ({ intent: "come_here", target: args["player"] as string | undefined }),
-      say: () => null, // handled below
+      come:    () => ({ intent: "come_here", target: args["player"] as string | undefined }),
     };
 
     if (command === "say") {
@@ -250,12 +309,10 @@ export class MinecraftBot {
   destroy() {
     this.destroyed = true;
     sharedWorldModel.unregisterBot(this.id);
+    this.intentCache.clear();
     this.fastBrain?.teardown();
     if (this.bot) {
-      try {
-        this.bot.quit("Disconnected by user");
-      } catch {
-      }
+      try { this.bot.quit("Disconnected by user"); } catch {}
       this.bot.removeAllListeners();
       this.bot = null;
     }

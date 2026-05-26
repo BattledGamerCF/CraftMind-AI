@@ -162,6 +162,15 @@ router.get("/bots/:id/telemetry", (req, res) => {
   });
 });
 
+router.get("/bots/:id/cognition", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({
+    mode: bot.getMode(),
+    telemetry: bot.cognitionTelemetry.getStats(),
+  });
+});
+
 router.get("/bots/:id/mode", (req, res) => {
   const bot = botManager.getBot(req.params["id"]!);
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }

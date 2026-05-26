@@ -32,6 +32,37 @@ description: Two-layer bot architecture (deterministic gameplay vs probabilistic
 - `follow_player` intentionally never naturally completes — it runs until preempted, cancelled, or times out. That's the policy.
 - `ensure_inventory` known limitation: maps items → mining resource (`planks → wood`). No crafting layer. If mining doesn't yield the literal item name (e.g. need `oak_planks` but mined `oak_log`), it logs and continues; downstream `build_structure` may fail with unmet materials. Document this when adding new structures.
 
+## Cognition Pipeline (Player Input → Intent)
+
+```
+Player chat
+  → MinecraftBot.handleChat
+  → CognitiveRouter.route()          ← all mode/profile/budget decisions here
+  → IntentCache.get()                ← skip LLM for repeated inputs
+  → CognitiveRouter.parseDeterministic()  ← fast path for keyword commands
+  → SlowBrain.processChat(decision)  ← LLM path, uses decision.promptProfile + memoryBudget
+  → CanonicalIntent (confidence, source)
+  → confidence gating                ← < 0.2 ignore, 0.2-0.4 fallback, ≥ 0.4 submit
+  → FastBrain.submitIntent()         ← Planner → Arbitrator → Executors
+```
+
+**CognitiveRouter** (`bot/cognition/CognitiveRouter.ts`) is the single authority for:
+- Resolving effective mode (including auto heuristics)
+- Hysteresis: higher-urgency modes override immediately; downgrade only after 5s cooldown
+- Prompt profile selection by state (combat→combat, building→builder, else by mode)
+- Memory budget and token budget per mode
+- deterministicAllowed, fallbackStrategy, reasoningDepth
+
+SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision` and calls `getPromptProfile(decision.promptProfile)`.
+
+**CanonicalIntent** extends `LLMIntent` with `confidence: number` and `source: "deterministic"|"llm"|"cache"`. The Planner and below see it as a plain LLMIntent (duck-typed).
+
+**IntentCache** (`bot/cognition/IntentCache.ts`): normalized-key LRU (200 entries). TTL: deterministic=120s, LLM=30s. Only caches confidence ≥ 0.75. Cleared on bot destroy.
+
+**CognitionTelemetry** (`bot/cognition/CognitionTelemetry.ts`): mode frequency, prompt tokens, routing latency, confidence distribution, cache hits, deterministic bypass count. Exposed at `GET /api/bots/:id/cognition`.
+
+**PromptProfiles** (`bot/cognition/PromptProfiles.ts`): 7 focused profiles (lightweight, balanced, combat, planning, social, builder, deep-reasoning). Combat profile loads no building context; planning/builder profiles load no combat-specific rules.
+
 ## Cognitive Economy Modes
 Controlled by `CognitiveMode` on `BotConfig` / `SlowBrain`. Switch at runtime via `PATCH /api/bots/:id/mode`.
 
