@@ -39,6 +39,9 @@ const KEYWORD_RULES: Array<{ test: RegExp; intent: CanonicalIntent["intent"]; ta
     target: () => "simple_shelter",
   },
   { test: /\bbuild\b/, intent: "build_structure", target: () => "simple_shelter" },
+  { test: /\b(go\s+home|return\s+home|head\s+home)\b/, intent: "return_home" },
+  { test: /\bset\s+home\b/, intent: "set_home" },
+  { test: /\b(clean\s*(up)?\s*(inventory)?|toss\s+junk|drop\s+junk)\b/, intent: "cleanup_inventory" },
 ];
 
 interface RoutingContext {

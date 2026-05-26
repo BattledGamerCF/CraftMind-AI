@@ -21,6 +21,8 @@ export interface ExecutorDeps {
   inventory: InventorySystem;
   social: SocialSystem;
   perception: Perception;
+  setHome?: (pos: { x: number; y: number; z: number }) => void;
+  getHome?: () => { x: number; y: number; z: number } | null;
 }
 
 function whenAborted(signal: AbortSignal, cleanup: () => void): () => void {
@@ -29,13 +31,38 @@ function whenAborted(signal: AbortSignal, cleanup: () => void): () => void {
   return () => signal.removeEventListener("abort", handler);
 }
 
+/** Returns time-of-day (0–24000). >13000 = night. */
+function timeOfDay(bot: Bot): number {
+  return (bot as unknown as { time?: { timeOfDay?: number } }).time?.timeOfDay ?? 0;
+}
+
+function isNight(bot: Bot): boolean {
+  const t = timeOfDay(bot);
+  return t > 13000 && t < 23500;
+}
+
 export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
   return [
     {
       type: "mine_resource",
       async execute(task, signal) {
+        // Skip if inventory is already full
+        if (deps.inventory.isFull()) {
+          logger.debug("mine_resource: inventory full, skipping");
+          return;
+        }
+
         const resource = task.target ?? "wood";
-        const count = (task.metadata["count"] as number | undefined) ?? 32;
+        const requestedCount = (task.metadata["count"] as number | undefined) ?? 32;
+
+        // Reduce target count if we already have some
+        const haveApprox = estimateResourceCount(deps, resource);
+        if (haveApprox >= requestedCount) {
+          logger.debug({ resource, haveApprox, requestedCount }, "mine_resource: already have enough");
+          return;
+        }
+        const count = requestedCount - haveApprox;
+
         const detach = whenAborted(signal, () => deps.mining.stop());
         try {
           await deps.mining.mine(resource, count);
@@ -65,14 +92,9 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         const target = task.target;
         if (!target) return;
         deps.movement.followPlayer(target);
-        // Run until aborted; pathfinder keeps following dynamically.
         await new Promise<void>((resolve) => {
           if (signal.aborted) { resolve(); return; }
-          const onAbort = () => {
-            deps.movement.stop();
-            resolve();
-          };
-          signal.addEventListener("abort", onAbort, { once: true });
+          signal.addEventListener("abort", () => { deps.movement.stop(); resolve(); }, { once: true });
         });
       },
     },
@@ -85,7 +107,7 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         }
         const detach = whenAborted(signal, () => deps.movement.stop());
         try {
-          await deps.movement.goto({ x: meta.x, y: meta.y, z: meta.z }, meta.range ?? 2);
+          await deps.movement.gotoSafe({ x: meta.x, y: meta.y, z: meta.z }, meta.range ?? 2);
         } finally {
           detach();
         }
@@ -100,7 +122,7 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         if (!player?.entity) throw new Error(`player ${target} not visible`);
         const detach = whenAborted(signal, () => deps.movement.stop());
         try {
-          await deps.movement.goto(player.entity.position, 3);
+          await deps.movement.gotoSafe(player.entity.position, 3);
         } finally {
           detach();
         }
@@ -110,8 +132,25 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
       type: "explore",
       async execute(_task, signal) {
         const pos = deps.bot.entity.position;
+        const night = isNight(deps.bot);
+
+        // At night: short radius, prefer toward home if known
+        if (night) {
+          const home = deps.getHome?.();
+          if (home) {
+            logger.debug("explore: night — returning home");
+            const detach = whenAborted(signal, () => deps.movement.stop());
+            try {
+              await deps.movement.gotoSafe(home, 5);
+            } finally {
+              detach();
+            }
+            return;
+          }
+        }
+
+        const dist = night ? 10 + Math.random() * 10 : 20 + Math.random() * 40;
         const angle = Math.random() * Math.PI * 2;
-        const dist = 20 + Math.random() * 30;
         const target = {
           x: pos.x + Math.cos(angle) * dist,
           y: pos.y,
@@ -119,7 +158,7 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         };
         const detach = whenAborted(signal, () => deps.movement.stop());
         try {
-          await deps.movement.goto(target, 3);
+          await deps.movement.gotoSafe(target, 3);
         } finally {
           detach();
         }
@@ -157,12 +196,11 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         if (!entity) return;
         const detach = whenAborted(signal, () => deps.movement.stop());
         try {
-          // Flee 8 blocks directly away
           const pos = deps.bot.entity.position;
           const dx = pos.x - entity.position.x;
           const dz = pos.z - entity.position.z;
           const len = Math.sqrt(dx * dx + dz * dz) || 1;
-          await deps.movement.goto({
+          await deps.movement.gotoSafe({
             x: pos.x + (dx / len) * 8,
             y: pos.y,
             z: pos.z + (dz / len) * 8,
@@ -203,10 +241,13 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
 
         for (const [item, needed] of Object.entries(requirements)) {
           if (signal.aborted) return;
+          if (deps.inventory.isFull()) {
+            logger.debug("ensure_inventory: inventory full, stopping early");
+            return;
+          }
           const have = deps.inventory.countItem(item);
           if (have >= needed) continue;
 
-          // Map item to a resource type the mining system understands.
           const resource = mapItemToResource(item);
           if (!resource) {
             logger.debug({ item }, "ensure_inventory: no resource mapping; skipping");
@@ -229,12 +270,68 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         await deps.inventory.equipBestArmor();
       },
     },
+    {
+      type: "return_home",
+      async execute(task, signal) {
+        // Position can come from task metadata (planned) or home lookup
+        const meta = task.metadata as { x?: number; y?: number; z?: number };
+        const home = (meta.x !== undefined && meta.y !== undefined && meta.z !== undefined)
+          ? { x: meta.x, y: meta.y, z: meta.z }
+          : deps.getHome?.();
+
+        if (!home) {
+          logger.debug("return_home: no home known");
+          await deps.social.say("I don't know where home is yet.").catch(() => {});
+          return;
+        }
+
+        const detach = whenAborted(signal, () => deps.movement.stop());
+        try {
+          await deps.movement.gotoSafe(home, 4);
+        } finally {
+          detach();
+        }
+      },
+    },
+    {
+      type: "set_home",
+      async execute() {
+        const pos = deps.bot.entity.position;
+        deps.setHome?.({ x: pos.x, y: pos.y, z: pos.z });
+        logger.info({ x: pos.x, y: pos.y, z: pos.z }, "Home base set");
+        await deps.social.say("Home base set here.").catch(() => {});
+      },
+    },
+    {
+      type: "cleanup_inventory",
+      async execute() {
+        const dropped = await deps.inventory.tossTrash();
+        await deps.inventory.tossExcess("cobblestone", 128);
+        await deps.inventory.tossExcess("dirt", 32);
+        await deps.inventory.tossExcess("sand", 32);
+        logger.debug({ dropped }, "cleanup_inventory: done");
+      },
+    },
   ];
+}
+
+/** Rough estimate of how many of a mineflayer resource type we already have. */
+function estimateResourceCount(deps: ExecutorDeps, resource: string): number {
+  const aliases: Record<string, string[]> = {
+    wood: ["oak_log", "birch_log", "spruce_log", "jungle_log", "acacia_log", "dark_oak_log", "oak_planks", "birch_planks"],
+    stone: ["cobblestone", "stone", "cobbled_deepslate"],
+    coal: ["coal"],
+    iron: ["iron_ore", "raw_iron", "iron_ingot"],
+    diamond: ["diamond", "diamond_ore"],
+    dirt: ["dirt", "coarse_dirt"],
+  };
+  const names = aliases[resource] ?? [resource];
+  return names.reduce((sum, n) => sum + deps.inventory.countItem(n), 0);
 }
 
 function mapItemToResource(item: string): string | null {
   if (item.includes("log")) return "wood";
-  if (item.includes("planks")) return "wood"; // bot will need crafting; placeholder
+  if (item.includes("planks")) return "wood";
   if (item.includes("cobblestone") || item === "stone") return "stone";
   if (item.includes("coal")) return "coal";
   if (item.includes("iron")) return "iron";

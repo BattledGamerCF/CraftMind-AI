@@ -79,6 +79,33 @@ const gatherFoodPlan: PlanBuilder = () => [
   }),
 ];
 
+const returnHomePlan: PlanBuilder = (_intent, ctx) => {
+  const home = ctx.memory?.semantic.getHome();
+  if (!home) {
+    return [createTask({
+      type: "say",
+      priority: "NORMAL",
+      metadata: { message: "I don't know where home is. Use 'set home' first." },
+      goal: "no home set",
+    })];
+  }
+  return [createTask({
+    type: "return_home",
+    priority: "NORMAL",
+    timeoutMs: 3 * 60_000,
+    metadata: { x: home.position.x, y: home.position.y, z: home.position.z },
+    goal: "return to home base",
+  })];
+};
+
+const setHomePlan: PlanBuilder = () => [
+  createTask({ type: "set_home", priority: "NORMAL", timeoutMs: 10_000, goal: "remember current location as home" }),
+];
+
+const cleanupInventoryPlan: PlanBuilder = () => [
+  createTask({ type: "cleanup_inventory", priority: "LOW", timeoutMs: 30_000, goal: "clean up inventory" }),
+];
+
 const stopPlan: PlanBuilder = () => [];
 const idlePlan: PlanBuilder = () => [createTask({ type: "idle", priority: "LOW", goal: "idle" })];
 
@@ -127,5 +154,8 @@ export function registerDefaultPlans(planner: Planner) {
   planner.registerBuilder("idle", idlePlan);
   planner.registerBuilder("report_status", reportStatusPlan);
   planner.registerBuilder("defend_self", defendSelfPlan);
+  planner.registerBuilder("return_home", returnHomePlan);
+  planner.registerBuilder("set_home", setHomePlan);
+  planner.registerBuilder("cleanup_inventory", cleanupInventoryPlan);
   planner.setFallback(idlePlan);
 }

@@ -67,7 +67,10 @@ export interface LLMIntent {
     | "stop"
     | "gather_food"
     | "defend_self"
-    | "report_status";
+    | "report_status"
+    | "return_home"
+    | "set_home"
+    | "cleanup_inventory";
   target?: string;
   chat?: string;
   params?: Record<string, unknown>;

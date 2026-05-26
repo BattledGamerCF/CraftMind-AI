@@ -72,6 +72,14 @@ export class SemanticMemory {
     }
   }
 
+  setHome(position: { x: number; y: number; z: number }) {
+    this.rememberLocation({ name: "home", position, kind: "base", description: "Bot home base" });
+  }
+
+  getHome(): NamedLocation | null {
+    return this.getLocation("home") ?? this.listLocations("base")[0] ?? null;
+  }
+
   snapshot() {
     return {
       locationCount: this.locations.size,

@@ -3,6 +3,15 @@ import { logger } from "../../lib/logger.js";
 
 interface Vec3Like { x: number; y: number; z: number }
 
+type PFBot = {
+  pathfinder: {
+    setMovements: (m: unknown) => void;
+    setGoal: (g: unknown, dynamic?: boolean) => void;
+    stop: () => void;
+    isMoving: () => boolean;
+  };
+};
+
 export class MovementSystem {
   private bot: Bot;
   private pathfinder: unknown = null;
@@ -27,9 +36,9 @@ export class MovementSystem {
     }
   }
 
-  private get pfBot(): { pathfinder: { setMovements: (m: unknown) => void; setGoal: (g: unknown, dynamic?: boolean) => void; stop: () => void; isMoving: () => boolean } } | null {
+  private get pfBot(): PFBot | null {
     if (!this.pathfinder) return null;
-    return this.bot as unknown as { pathfinder: { setMovements: (m: unknown) => void; setGoal: (g: unknown, dynamic?: boolean) => void; stop: () => void; isMoving: () => boolean } };
+    return this.bot as unknown as PFBot;
   }
 
   private getMovements() {
@@ -55,27 +64,36 @@ export class MovementSystem {
       this.active = true;
 
       await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          this.stop();
-          resolve();
-        }, 30000);
-
-        const botAny = this.bot as unknown as { once: (event: string, cb: () => void) => void; removeListener: (event: string, cb: () => void) => void };
-
-        const onGoalReached = () => {
-          clearTimeout(timeout);
-          botAny.removeListener("path_update", onErr);
+        let settled = false;
+        const settle = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          botAny.removeListener("goal_reached", onGoalReached);
+          botAny.removeListener("path_update", onPathUpdate);
           resolve();
         };
 
-        const onErr = () => {
-          clearTimeout(timeout);
-          botAny.removeListener("goal_reached", onGoalReached);
-          resolve();
+        const timer = setTimeout(() => {
+          this.stop();
+          settle();
+        }, 30_000);
+
+        const botAny = this.bot as unknown as {
+          once: (e: string, cb: (...args: unknown[]) => void) => void;
+          on: (e: string, cb: (...args: unknown[]) => void) => void;
+          removeListener: (e: string, cb: (...args: unknown[]) => void) => void;
+        };
+
+        const onGoalReached = () => settle();
+        // Only resolve on genuine path failure, not normal updates
+        const onPathUpdate = (result: unknown) => {
+          const status = (result as { status?: string }).status ?? "";
+          if (status === "noPath" || status === "timeout") settle();
         };
 
         botAny.once("goal_reached", onGoalReached);
-        botAny.once("path_update", onErr);
+        botAny.on("path_update", onPathUpdate);
       });
 
       return true;
@@ -85,6 +103,58 @@ export class MovementSystem {
     } finally {
       this.active = false;
     }
+  }
+
+  /**
+   * goto with stuck detection. Samples position every 3s; if bot hasn't moved
+   * 0.4 blocks in 6s, attempts a jump-sprint recovery, then retries.
+   */
+  async gotoSafe(target: Vec3Like, range = 2, maxAttempts = 2): Promise<boolean> {
+    for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+      let lastX = this.bot.entity.position.x;
+      let lastZ = this.bot.entity.position.z;
+      let stuckMs = 0;
+      let done = false;
+
+      const stuckPoller = setInterval(() => {
+        if (done) return;
+        const pos = this.bot.entity.position;
+        const moved = Math.abs(pos.x - lastX) + Math.abs(pos.z - lastZ);
+        if (moved > 0.4) {
+          lastX = pos.x;
+          lastZ = pos.z;
+          stuckMs = 0;
+        } else {
+          stuckMs += 3000;
+          if (stuckMs >= 6000) {
+            stuckMs = 0;
+            this.recoverFromStuck().catch(() => {});
+          }
+        }
+      }, 3000);
+
+      const result = await this.goto(target, range);
+      done = true;
+      clearInterval(stuckPoller);
+
+      if (result) return true;
+      if (attempt < maxAttempts) await this.recoverFromStuck();
+    }
+    return false;
+  }
+
+  private async recoverFromStuck(): Promise<void> {
+    logger.debug("MovementSystem: stuck recovery");
+    try {
+      this.bot.setControlState("jump", true);
+      this.bot.setControlState("sprint", true);
+      const yaw = this.bot.entity.yaw + (Math.random() - 0.5) * 1.5;
+      await this.bot.look(yaw, 0, false);
+      await new Promise<void>((r) => setTimeout(r, 900));
+    } finally {
+      this.bot.clearControlStates();
+    }
+    await new Promise<void>((r) => setTimeout(r, 400));
   }
 
   followPlayer(playerName: string) {

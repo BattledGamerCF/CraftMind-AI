@@ -107,6 +107,48 @@ export class InventorySystem {
     }
   }
 
+  /** True when the bot has 35+ item stacks — effectively full. */
+  isFull(): boolean {
+    return this.bot.inventory.items().length >= 35;
+  }
+
+  /**
+   * Drop low-value trash items. Returns number of item types dropped.
+   * Preserves tools, armor, food, and anything in KEEP_PATTERNS.
+   */
+  async tossTrash(): Promise<number> {
+    const TRASH = new Set([
+      "gravel", "flint", "rotten_flesh", "spider_eye", "bone",
+      "gunpowder", "string", "ender_pearl", "slime_ball",
+    ]);
+    const KEEP_PATTERNS = [
+      "pickaxe", "axe", "sword", "shovel", "hoe",
+      "helmet", "chestplate", "leggings", "boots",
+      "food", "bread", "beef", "pork", "mutton", "chicken", "fish",
+      "apple", "carrot", "potato", "melon", "berry", "steak",
+    ];
+
+    let dropped = 0;
+    for (const item of this.bot.inventory.items()) {
+      if (TRASH.has(item.name)) {
+        try { await this.bot.toss(item.type, null, item.count); dropped++; } catch {}
+      } else if (KEEP_PATTERNS.every((p) => !item.name.includes(p))) {
+        // Excess bulk items
+        if (item.name === "cobblestone" && this.countItem("cobblestone") > 128) {
+          const excess = this.countItem("cobblestone") - 128;
+          try { await this.bot.toss(item.type, null, Math.min(excess, item.count)); dropped++; } catch {}
+        } else if (item.name === "dirt" && this.countItem("dirt") > 32) {
+          const excess = this.countItem("dirt") - 32;
+          try { await this.bot.toss(item.type, null, Math.min(excess, item.count)); dropped++; } catch {}
+        } else if (item.name === "sand" && this.countItem("sand") > 32) {
+          const excess = this.countItem("sand") - 32;
+          try { await this.bot.toss(item.type, null, Math.min(excess, item.count)); dropped++; } catch {}
+        }
+      }
+    }
+    return dropped;
+  }
+
   async tossExcess(itemName: string, keepCount = 64): Promise<void> {
     const count = this.countItem(itemName);
     if (count > keepCount) {

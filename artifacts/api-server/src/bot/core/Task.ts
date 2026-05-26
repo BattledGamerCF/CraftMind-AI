@@ -31,7 +31,10 @@ export type TaskType =
   | "say"
   | "idle"
   | "ensure_inventory"
-  | "equip_armor";
+  | "equip_armor"
+  | "return_home"
+  | "set_home"
+  | "cleanup_inventory";
 
 export interface Task {
   id: string;

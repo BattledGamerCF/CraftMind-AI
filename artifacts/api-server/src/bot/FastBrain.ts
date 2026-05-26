@@ -98,6 +98,8 @@ export class FastBrain {
       inventory: this.inventory,
       social: this.social,
       perception: this.perception,
+      setHome: (pos) => this.memory.semantic.setHome(pos),
+      getHome: () => this.memory.semantic.getHome()?.position ?? null,
     });
     for (const e of executors) this.arbitrator.registerExecutor(e);
 
