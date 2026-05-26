@@ -34,6 +34,19 @@ export class Arbitrator {
   }
 
   enqueue(task: Task): void {
+    // Dedup: skip NORMAL/LOW tasks when an identical task is already active
+    if (task.priority === "NORMAL" || task.priority === "LOW") {
+      const dup = Array.from(this.tasks.values()).find(
+        (t) =>
+          t.type === task.type &&
+          t.target === task.target &&
+          (t.status === "pending" || t.status === "ready" || t.status === "running"),
+      );
+      if (dup) {
+        logger.debug({ type: task.type, target: task.target }, "Task deduped (already active)");
+        return;
+      }
+    }
     this.tasks.set(task.id, task);
     logger.debug({ id: task.id, type: task.type, priority: task.priority, goal: task.goal }, "Task enqueued");
     this.tick();

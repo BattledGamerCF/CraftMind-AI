@@ -190,6 +190,12 @@ router.patch("/bots/:id/mode", (req, res) => {
   res.json({ mode });
 });
 
+router.get("/bots/:id/trust", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({ trust: bot.getTrustSnapshot() });
+});
+
 router.get("/swarm", (_req, res) => {
   res.json({ bots: sharedWorldModel.getBots() });
 });

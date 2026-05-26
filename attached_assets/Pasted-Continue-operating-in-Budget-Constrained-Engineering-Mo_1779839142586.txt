@@ -1,0 +1,191 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Use Economy mode development behavior:
+- small targeted edits
+- minimal file reads
+- avoid broad rescans
+- avoid speculative rewrites
+- patch surgically
+- preserve stable interfaces
+
+Do NOT refactor core architecture unless required for stability.
+
+The current system foundation is strong. Focus now on long-session usability, believable autonomous behavior, and practical versatility.
+
+Priority goal:
+make the bot feel increasingly like a persistent survival companion rather than a command executor.
+
+Focus areas:
+
+1. Task Persistence and Recovery
+
+Add lightweight persistent active-task recovery.
+
+If:
+- reconnect occurs
+- server restart occurs
+- executor interruption occurs
+
+the bot should attempt to:
+- restore previous high-level objective
+- resume interrupted plans where safe
+- abandon invalid tasks gracefully
+
+Do NOT serialize low-level executor state.
+Persist only:
+- current goal
+- planner task graph
+- target metadata
+- home/base references
+- active mode
+- important memory summaries
+
+Keep persistence compact and cheap.
+
+2. Survival Sustainability
+
+Improve autonomous survival behavior:
+- proactively seek food before critical hunger
+- avoid dangerous caves at low gear levels
+- avoid nighttime wandering when weak
+- retreat when equipment quality is poor
+- recognize low-health combat disadvantage
+
+Add lightweight “risk scoring”:
+- armor quality
+- weapon quality
+- health
+- food
+- nearby hostile density
+- time of day
+
+Use this only for planner weighting and retreat decisions.
+
+Do NOT create a giant utility-AI rewrite.
+
+3. Equipment Progression
+
+Add simple progression awareness:
+wood → stone → iron → diamond
+
+Bot should:
+- recognize outdated tools
+- replace broken tools
+- craft better tools when materials exist
+- prefer appropriate tools automatically
+
+Keep logic heuristic-based and lightweight.
+
+4. Smarter Player Interaction
+
+Improve companion-like behaviors:
+- avoid standing directly inside players
+- maintain comfortable follow spacing
+- orient toward speaking players
+- acknowledge commands naturally
+- avoid interrupting player building/mining
+
+Add lightweight “attention” behavior:
+- look toward nearby activity
+- briefly inspect placed blocks
+- react to explosions/combat nearby
+
+Avoid overdoing random movements.
+
+5. Lightweight Reputation / Trust System
+
+Add a simple player trust model.
+
+Track:
+- owner/player preference
+- hostile interactions
+- helpful interactions
+- repeated commands
+- gifting/resources
+
+This should influence:
+- response tone
+- task priority
+- follow preference
+- item sharing
+
+Keep this extremely lightweight.
+Do NOT build a giant RPG social simulator.
+
+6. World Knowledge
+
+Expand semantic memory carefully:
+- villages discovered
+- mines discovered
+- dangerous zones
+- useful biomes
+- known farms/storage
+
+Use compact summaries only.
+Avoid massive world databases.
+
+7. Planner Stability
+
+Add protections against:
+- infinite retry loops
+- oscillating tasks
+- repeated planner churn
+- duplicate objectives
+- conflicting recovery behavior
+
+Planner should recognize:
+“I already failed this repeatedly.”
+
+Add retry cooldowns and abandonment thresholds.
+
+8. Autonomous Idle Behavior
+
+When idle:
+- stay near safe areas
+- organize inventory
+- inspect surroundings
+- patrol lightly
+- avoid dangerous wandering
+
+Do NOT allow:
+- random aimless exploration
+- constant jumping/spinning
+- excessive ambient actions
+
+Goal:
+subtle believable presence.
+
+9. API Stabilization
+
+Do not build a heavy frontend yet.
+
+Instead stabilize:
+- telemetry APIs
+- task APIs
+- memory APIs
+- cognition APIs
+- executor status APIs
+
+Prepare clean interfaces for future dashboards.
+
+10. Cost Discipline
+
+Continue minimizing:
+- project-wide reads
+- repeated scans
+- autonomous testing loops
+- broad rewrites
+- unnecessary reasoning passes
+
+Prefer:
+- targeted patches
+- local verification
+- incremental additions
+
+Only use deeper reasoning if:
+- planner stability is affected
+- persistence architecture changes
+- concurrency issues emerge
+- recovery systems require coordination
+
+Otherwise remain surgical and economical.

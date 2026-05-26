@@ -18,6 +18,7 @@ import { createTask } from "./core/Task.js";
 import type { Task } from "./core/Task.js";
 import { registerDefaultPlans } from "./plans/index.js";
 import { createDefaultExecutors } from "./executors/index.js";
+import { RiskAssessor } from "./systems/RiskAssessor.js";
 import { logger } from "../lib/logger.js";
 
 export interface FastBrainConfig {
@@ -63,6 +64,8 @@ export class FastBrain {
   private threatWatcherStop: (() => void) | null = null;
   private hazardWatcherStop: (() => void) | null = null;
   private pruneInterval: NodeJS.Timeout | null = null;
+  private riskAssessor = new RiskAssessor();
+  private readonly intentFailures = new Map<string, { count: number; cooledUntil: number }>();
 
   constructor(bot: Bot, config: FastBrainConfig) {
     this.bot = bot;
@@ -132,21 +135,41 @@ export class FastBrain {
         name: h.name, distance: h.distance, position: h.position,
       })));
 
+      // Compute risk once per tick for all decisions below
+      const tod = (this.bot as unknown as { time?: { timeOfDay?: number } }).time?.timeOfDay ?? 0;
+      const risk = this.riskAssessor.assess(snap, this.inventory, tod);
+
       const current = this.arbitrator.getCurrent();
       const alreadyEngaging = current?.type === "engage_hostile" || current?.type === "flee_threat";
 
-      // Hostile within 8 blocks → engage or flee
+      // Hostile within 8 blocks → engage or flee (risk-weighted)
       const closest = snap.hostiles[0];
       if (closest && closest.distance < 8 && !alreadyEngaging) {
         const entity = this.bot.entities[closest.id];
         if (entity) {
-          const action: "attack" | "flee" = snap.health < 5 ? "flee" : "attack";
+          const action: "attack" | "flee" = risk.shouldAvoidCombat ? "flee" : "attack";
           this.submitCombatTask(entity as unknown as Parameters<typeof this.submitCombatTask>[0], action);
         }
       }
 
-      // Hunger → enqueue eat task (HIGH when low, CRITICAL when severe)
-      if (snap.food <= 14 && this.hunger.hasFood()) {
+      // Retreat: if risk is severe and currently doing low-priority work, head home
+      if (risk.shouldRetreat && current && current.priority === "LOW") {
+        const home = this.memory.semantic.getHome();
+        if (home) {
+          this.arbitrator.enqueue(createTask({
+            type: "return_home",
+            priority: "HIGH",
+            interruptible: true,
+            timeoutMs: 3 * 60_000,
+            metadata: { x: home.position.x, y: home.position.y, z: home.position.z },
+            goal: `retreat home (risk ${risk.value.toFixed(2)}: ${risk.reasons.join(", ")})`,
+          }));
+        }
+      }
+
+      // Hunger → enqueue eat task; proactive threshold rises when under stress
+      const foodThreshold = risk.value > 0.4 ? 16 : 14;
+      if (snap.food <= foodThreshold && this.hunger.hasFood()) {
         const hasEatTask = this.arbitrator.getAllTasks().some((t) =>
           t.type === "eat_food" && (t.status === "pending" || t.status === "ready" || t.status === "running"),
         );
@@ -158,6 +181,21 @@ export class FastBrain {
             interruptible: !severe,
             timeoutMs: 10_000,
             goal: severe ? "eat (critical hunger)" : "eat (low hunger)",
+          }));
+        }
+      }
+
+      // Inventory full → trigger a background cleanup if none queued
+      if (this.inventory.isFull()) {
+        const hasCleanup = this.arbitrator.getAllTasks().some((t) =>
+          t.type === "cleanup_inventory" && (t.status === "pending" || t.status === "ready" || t.status === "running"),
+        );
+        if (!hasCleanup) {
+          this.arbitrator.enqueue(createTask({
+            type: "cleanup_inventory",
+            priority: "LOW",
+            timeoutMs: 30_000,
+            goal: "clean up full inventory",
           }));
         }
       }
@@ -248,9 +286,26 @@ export class FastBrain {
     });
   }
 
+  private isIntentThrottled(intent: string): boolean {
+    const rec = this.intentFailures.get(intent);
+    return !!rec && Date.now() < rec.cooledUntil;
+  }
+
+  private recordIntentFailure(taskType: string): void {
+    const rec = this.intentFailures.get(taskType) ?? { count: 0, cooledUntil: 0 };
+    rec.count++;
+    if (rec.count >= 3) {
+      rec.cooledUntil = Date.now() + 60_000;
+      rec.count = 0;
+      logger.warn({ taskType }, "Intent throttled after 3 failures (60s cooldown)");
+    }
+    this.intentFailures.set(taskType, rec);
+  }
+
   private onTaskComplete(task: Task) {
     if (task.status === "failed" || task.status === "blocked") {
       this.memory.shortTerm.recordFailure(task.type, task.failureReason ?? "unknown");
+      this.recordIntentFailure(task.type);
       this.memory.episodic.record({
         kind: "task_failed",
         description: `${task.goal} failed: ${task.failureReason ?? "unknown"}`,
@@ -280,6 +335,13 @@ export class FastBrain {
    */
   submitIntent(intent: LLMIntent): { planId: string; taskCount: number } | null {
     logger.debug({ intent }, "FastBrain: submitting intent");
+
+    // Throttle intents that have failed 3+ times recently
+    if (this.isIntentThrottled(intent.intent)) {
+      logger.debug({ intent: intent.intent }, "Intent throttled — skipping");
+      this.social.say("I keep failing at that. Let me rest a moment.").catch(() => {});
+      return null;
+    }
 
     if (intent.chat) {
       this.humanization.situationalReaction().catch(() => {});

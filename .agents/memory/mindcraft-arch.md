@@ -63,6 +63,34 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 
 **PromptProfiles** (`bot/cognition/PromptProfiles.ts`): 7 focused profiles (lightweight, balanced, combat, planning, social, builder, deep-reasoning). Combat profile loads no building context; planning/builder profiles load no combat-specific rules.
 
+## Phase 3 additions (gameplay quality + planner stability)
+
+### RiskAssessor (`bot/systems/RiskAssessor.ts`)
+- Computes `RiskScore { value 0–1, reasons[], shouldRetreat, shouldAvoidCombat, shouldStayNear }`
+- Inputs: perception snap (health/food/hostiles), InventorySystem (armor check), timeOfDay
+- Used every perception tick in FastBrain: gates combat (flee vs attack), proactive food threshold (14→16 under stress), auto-retreat home when risk ≥ 0.70 + task is LOW priority
+
+### TrustSystem (`bot/social/TrustSystem.ts`)
+- Per-player `PlayerTrust { score 0–100, level, interactions, commands, hostile/helpful events }`
+- Incremented in MinecraftBot.handleChat (any message +1) and submitIntent (command +2)
+- Exposed at `GET /api/bots/:id/trust`
+- `shouldPrioritize(name)` → score ≥ 60 or level ≥ trusted
+
+### Planner stability
+- **Arbitrator dedup**: `enqueue()` now skips NORMAL/LOW tasks when identical type+target already pending/ready/running
+- **Intent failure throttle** in FastBrain: `intentFailures` Map tracks per-TaskType failures; after 3 failures → 60s cooldown, bot refuses that intent and says so
+- Both reset on bot destroy
+
+### Idle executor improvements (`executors/index.ts` idle case)
+- Replaced 5s sleep with probabilistic behavior selection (picks 2 of 3):
+  1. Glance around (random yaw lookAt)
+  2. Toss trash if inventory full
+  3. Drift toward home if distance > 24 blocks
+- 3–5s natural pause at end; fully abortable throughout
+
+### New REST endpoint
+- `GET /api/bots/:id/trust` — returns trust snapshot sorted by score
+
 ## Cognitive Economy Modes
 Controlled by `CognitiveMode` on `BotConfig` / `SlowBrain`. Switch at runtime via `PATCH /api/bots/:id/mode`.
 

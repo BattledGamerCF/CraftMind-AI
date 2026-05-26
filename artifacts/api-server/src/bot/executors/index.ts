@@ -226,9 +226,51 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
     {
       type: "idle",
       async execute(_task, signal) {
+        if (signal.aborted) return;
+
+        // Subtle idle behaviors — pick one or two non-disruptive actions
+        const behaviors: Array<() => Promise<void>> = [
+          // Glance around
+          async () => {
+            const pos = deps.bot.entity.position;
+            const yaw = Math.random() * Math.PI * 2;
+            await deps.movement.lookAt({
+              x: pos.x + Math.cos(yaw) * 6,
+              y: pos.y + (Math.random() - 0.4) * 2,
+              z: pos.z + Math.sin(yaw) * 6,
+            });
+          },
+          // Tidy inventory if nearly full
+          async () => {
+            if (deps.inventory.isFull()) {
+              await deps.inventory.tossTrash().catch(() => {});
+            }
+          },
+          // Drift toward home if far away
+          async () => {
+            const home = deps.getHome?.();
+            if (home && deps.movement.distanceTo(home) > 24) {
+              const detach = whenAborted(signal, () => deps.movement.stop());
+              try {
+                await deps.movement.goto(home, 10);
+              } finally {
+                detach();
+              }
+            }
+          },
+        ];
+
+        // Shuffle and run at most 2
+        const chosen = behaviors.sort(() => Math.random() - 0.5).slice(0, 2);
+        for (const b of chosen) {
+          if (signal.aborted) return;
+          await b().catch(() => {});
+        }
+
+        // Natural pause
         await new Promise<void>((resolve) => {
           if (signal.aborted) { resolve(); return; }
-          const t = setTimeout(resolve, 5000);
+          const t = setTimeout(resolve, 3000 + Math.random() * 2000);
           signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
         });
       },

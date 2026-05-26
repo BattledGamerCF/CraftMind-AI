@@ -7,6 +7,7 @@ import { createLLMProvider } from "./llm/ProviderFactory.js";
 import { sharedWorldModel, type BotRole } from "./core/SharedWorldModel.js";
 import { CognitiveRouter, IntentCache, CognitionTelemetry } from "./cognition/index.js";
 import { estimateProfileTokens } from "./cognition/PromptProfiles.js";
+import { TrustSystem } from "./social/TrustSystem.js";
 import { logger } from "../lib/logger.js";
 
 const CONFIDENCE_CLARIFY_THRESHOLD = 0.4;
@@ -26,6 +27,7 @@ export class MinecraftBot {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private destroyed = false;
+  private trust = new TrustSystem();
 
   constructor(id: string, config: BotConfig, role: BotRole = "generalist") {
     this.id = id;
@@ -109,6 +111,9 @@ export class MinecraftBot {
 
   private async handleChat(username: string, message: string) {
     if (!this.fastBrain || !this.bot) return;
+
+    // Record every addressed interaction for trust tracking
+    this.trust.onInteraction(username, false);
 
     const lowerMsg = message.toLowerCase();
     const botName = this.bot.username.toLowerCase();
@@ -223,6 +228,8 @@ export class MinecraftBot {
   }
 
   private submitIntent(intent: CanonicalIntent | LLMIntent, username: string, message: string) {
+    // Count successful intent submissions as commands toward trust
+    this.trust.onInteraction(username, true);
     if (!this.fastBrain) return;
     this.fastBrain.memory.episodic.record({
       kind: "player_interaction",
@@ -300,6 +307,10 @@ export class MinecraftBot {
       currentTask: this.fastBrain?.getCurrentTask() ?? null,
       cognitiveMode: this.slowBrain.getMode(),
     };
+  }
+
+  getTrustSnapshot() {
+    return this.trust.snapshot();
   }
 
   getRole(): BotRole {
