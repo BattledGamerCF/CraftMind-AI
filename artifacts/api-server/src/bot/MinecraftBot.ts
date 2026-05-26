@@ -1,25 +1,28 @@
 import mineflayer from "mineflayer";
 import type { Bot } from "mineflayer";
-import type { BotConfig, BotStatus } from "./types.js";
+import type { BotConfig, BotStatus, LLMIntent } from "./types.js";
 import { FastBrain } from "./FastBrain.js";
 import { SlowBrain } from "./SlowBrain.js";
 import { createLLMProvider } from "./llm/ProviderFactory.js";
+import { sharedWorldModel, type BotRole } from "./core/SharedWorldModel.js";
 import { logger } from "../lib/logger.js";
 
 export class MinecraftBot {
   readonly id: string;
   private bot: Bot | null = null;
-  private fastBrain: FastBrain | null = null;
+  fastBrain: FastBrain | null = null;
   private slowBrain: SlowBrain;
   private config: BotConfig;
+  private role: BotRole;
   connected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private destroyed = false;
 
-  constructor(id: string, config: BotConfig) {
+  constructor(id: string, config: BotConfig, role: BotRole = "generalist") {
     this.id = id;
     this.config = config;
+    this.role = role;
     const llm = createLLMProvider(config.llm);
     this.slowBrain = new SlowBrain(llm);
   }
@@ -55,6 +58,8 @@ export class MinecraftBot {
         await this.fastBrain!.setup(async (username, message) => {
           await this.handleChat(username, message);
         });
+
+        sharedWorldModel.registerBot({ id: this.id, username: this.config.username, role: this.role });
 
         resolve();
       });
@@ -137,7 +142,12 @@ export class MinecraftBot {
       });
 
       if (intent) {
-        await this.fastBrain.executeIntent(intent);
+        this.fastBrain.memory.episodic.record({
+          kind: "player_interaction",
+          description: `${username}: "${cleanMessage}" → ${intent.intent}`,
+          participants: [username],
+        });
+        this.fastBrain.submitIntent(intent);
       }
     } catch (err) {
       logger.error({ err }, "Chat handling error");
@@ -147,31 +157,25 @@ export class MinecraftBot {
   async sendCommand(command: string, args: Record<string, unknown> = {}): Promise<void> {
     if (!this.fastBrain) throw new Error("Bot not connected");
 
-    switch (command) {
-      case "stop":
-        await this.fastBrain.executeIntent({ intent: "stop" });
-        break;
-      case "follow":
-        await this.fastBrain.executeIntent({ intent: "follow_player", target: args["player"] as string });
-        break;
-      case "mine":
-        await this.fastBrain.executeIntent({ intent: "mine_resource", target: args["resource"] as string ?? "wood" });
-        break;
-      case "build":
-        await this.fastBrain.executeIntent({ intent: "build_structure", target: args["structure"] as string ?? "simple_shelter" });
-        break;
-      case "explore":
-        await this.fastBrain.executeIntent({ intent: "explore" });
-        break;
-      case "say":
-        if (args["message"]) await this.fastBrain.social.say(args["message"] as string);
-        break;
-      case "come":
-        await this.fastBrain.executeIntent({ intent: "come_here", target: args["player"] as string });
-        break;
-      default:
-        throw new Error(`Unknown command: ${command}`);
+    const intentMap: Record<string, () => LLMIntent | null> = {
+      stop: () => ({ intent: "stop" }),
+      follow: () => ({ intent: "follow_player", target: args["player"] as string | undefined }),
+      mine: () => ({ intent: "mine_resource", target: (args["resource"] as string) ?? "wood", params: args["count"] !== undefined ? { count: args["count"] } : undefined }),
+      build: () => ({ intent: "build_structure", target: (args["structure"] as string) ?? "simple_shelter" }),
+      explore: () => ({ intent: "explore" }),
+      come: () => ({ intent: "come_here", target: args["player"] as string | undefined }),
+      say: () => null, // handled below
+    };
+
+    if (command === "say") {
+      if (args["message"]) await this.fastBrain.social.say(args["message"] as string);
+      return;
     }
+
+    const make = intentMap[command];
+    if (!make) throw new Error(`Unknown command: ${command}`);
+    const intent = make();
+    if (intent) this.fastBrain.submitIntent(intent);
   }
 
   getStatus(): BotStatus {
@@ -191,8 +195,13 @@ export class MinecraftBot {
     };
   }
 
+  getRole(): BotRole {
+    return this.role;
+  }
+
   destroy() {
     this.destroyed = true;
+    sharedWorldModel.unregisterBot(this.id);
     this.fastBrain?.teardown();
     if (this.bot) {
       try {

@@ -51,10 +51,12 @@ export class HumanizationSystem {
     if (!this.enabled) return;
     const roll = Math.random();
     try {
-      if (roll < 0.3) {
+      if (roll < 0.25) {
         await this.smallStep();
-      } else if (roll < 0.5) {
+      } else if (roll < 0.45) {
         await this.doJump();
+      } else if (roll < 0.65) {
+        await this.inspectNearbyBlock();
       }
     } catch {
     }
@@ -67,6 +69,57 @@ export class HumanizationSystem {
       const pitch = randomBetween(-0.4, 0.3);
       await this.bot.look(yaw, pitch, false);
     } catch {
+    }
+  }
+
+  /** Briefly glance toward a position (used for chat events, sounds, mob spawns). */
+  async lookAtEvent(pos: { x: number; y: number; z: number }, opts: { jitter?: number; durationMs?: number } = {}) {
+    if (!this.enabled) return;
+    const jitter = opts.jitter ?? 0.3;
+    try {
+      const target = {
+        x: pos.x + randomBetween(-jitter, jitter),
+        y: pos.y + randomBetween(-jitter, jitter),
+        z: pos.z + randomBetween(-jitter, jitter),
+      };
+      await this.bot.lookAt(target as Parameters<Bot["lookAt"]>[0], false);
+      const hold = opts.durationMs ?? randomInt(400, 1200);
+      await new Promise<void>((r) => setTimeout(r, hold));
+    } catch {
+    }
+  }
+
+  /** Pause briefly to "inspect" a random nearby block — believable idle curiosity. */
+  async inspectNearbyBlock() {
+    if (!this.enabled) return;
+    try {
+      const pos = this.bot.entity.position;
+      const dx = randomInt(-4, 4);
+      const dz = randomInt(-4, 4);
+      const target = { x: Math.floor(pos.x) + dx, y: Math.floor(pos.y), z: Math.floor(pos.z) + dz };
+      await this.bot.lookAt(target as Parameters<Bot["lookAt"]>[0], false);
+      await new Promise<void>((r) => setTimeout(r, randomInt(500, 1500)));
+    } catch {
+    }
+  }
+
+  /** Small hesitation before committing to a movement — used by executors before goto. */
+  async navigationHesitation() {
+    if (!this.enabled) return;
+    if (Math.random() < 0.35) {
+      await new Promise<void>((r) => setTimeout(r, randomInt(150, 500)));
+    }
+  }
+
+  /** Acknowledgement reaction — slight pause + head movement when responding to something. */
+  async situationalReaction() {
+    if (!this.enabled) return;
+    await new Promise<void>((r) => setTimeout(r, randomInt(200, 600)));
+    if (Math.random() < 0.5) {
+      try {
+        await this.bot.look(this.bot.entity.yaw + randomBetween(-0.3, 0.3), randomBetween(-0.2, 0.1), false);
+      } catch {
+      }
     }
   }
 
@@ -103,7 +156,11 @@ export class HumanizationSystem {
       y: targetPos.y + jitterY,
       z: targetPos.z,
     };
-    await this.bot.lookAt(jittered as Parameters<Bot["lookAt"]>[0], false);
+    try {
+      await this.bot.lookAt(jittered as Parameters<Bot["lookAt"]>[0], false);
+    } catch (err) {
+      logger.debug({ err }, "impreciseLook failed");
+    }
   }
 
   setEnabled(enabled: boolean) {

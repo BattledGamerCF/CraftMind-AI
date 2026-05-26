@@ -1,1 +1,1 @@
-- [Mindcraft bot architecture](mindcraft-arch.md) — dual-brain Minecraft AI: FastBrain (state machine) + SlowBrain (LLM, event-driven only); mineflayer + pathfinder are esbuild-external.
+- [Mindcraft bot architecture](mindcraft-arch.md) — dual-brain bot + Phase-2 stack: Planner→Arbitrator→Executors with Perception-driven reactive watchers; HungerSystem must NOT auto-act (arbitrated only); mineflayer + pathfinder are esbuild-external.

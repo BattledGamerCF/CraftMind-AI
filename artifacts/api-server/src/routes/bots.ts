@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { botManager } from "../bot/BotManager.js";
 import { listStructures } from "../bot/structures/StructureRegistry.js";
+import { sharedWorldModel } from "../bot/core/SharedWorldModel.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -10,7 +11,7 @@ router.get("/bots", (_req, res) => {
 });
 
 router.post("/bots", async (req, res) => {
-  const { host, port, username, version, auth, llm, behavior } = req.body as Record<string, unknown>;
+  const { host, port, username, version, auth, llm, behavior, role } = req.body as Record<string, unknown>;
 
   if (!host || typeof host !== "string") {
     res.status(400).json({ error: "host is required" });
@@ -45,6 +46,7 @@ router.post("/bots", async (req, res) => {
       auth: auth === "microsoft" ? "microsoft" : "offline",
       llm: llm as Parameters<typeof botManager.createBot>[0]["llm"],
       behavior: behavior as Parameters<typeof botManager.createBot>[0]["behavior"],
+      role: role as Parameters<typeof botManager.createBot>[0]["role"],
     });
 
     res.status(201).json({ bot: bot.getStatus() });
@@ -109,6 +111,56 @@ router.get("/bots/:id/chat", (req, res) => {
     return;
   }
   res.json({ chat: bot.getStatus().chatHistory });
+});
+
+// --- New visibility endpoints: tasks, plans, perception, memory, telemetry ---
+
+router.get("/bots/:id/tasks", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({
+    current: bot.fastBrain.arbitrator.getCurrent(),
+    queue: bot.fastBrain.arbitrator.getQueue(),
+    all: bot.fastBrain.arbitrator.getAllTasks(),
+  });
+});
+
+router.post("/bots/:id/tasks/cancel-all", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  bot.fastBrain.arbitrator.cancelAll("api_cancel_all");
+  res.json({ success: true });
+});
+
+router.get("/bots/:id/perception", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({ perception: bot.fastBrain.perception.get() });
+});
+
+router.get("/bots/:id/memory", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({
+    shortTerm: bot.fastBrain.memory.shortTerm.snapshot(),
+    episodic: bot.fastBrain.memory.episodic.recent(20),
+    semantic: bot.fastBrain.memory.semantic.snapshot(),
+  });
+});
+
+router.get("/bots/:id/telemetry", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  const windowMs = Number(req.query["windowMs"] ?? 5 * 60_000);
+  res.json({
+    stats: bot.fastBrain.telemetry.getStats(),
+    failures: bot.fastBrain.telemetry.summarizeFailures(windowMs),
+    recent: bot.fastBrain.telemetry.getRecords(50),
+  });
+});
+
+router.get("/swarm", (_req, res) => {
+  res.json({ bots: sharedWorldModel.getBots() });
 });
 
 router.get("/structures", (_req, res) => {

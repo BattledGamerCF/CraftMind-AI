@@ -22,11 +22,18 @@ export class HungerSystem {
     this.hungerThreshold = hungerThreshold;
   }
 
+  /**
+   * NOTE: The autonomous hunger-check loop is intentionally disabled in Phase 2.
+   * Eating is now routed exclusively through the Arbitrator: Perception observes
+   * food level and submits a CRITICAL `eat_food` task when food <= threshold.
+   * This keeps all bot actions under central arbitration and prevents conflicts
+   * with mining/building/combat tasks.
+   *
+   * start() remains a no-op for API compatibility; HungerSystem is used as a
+   * pure action library (eat(), hasFood()) by the eat_food executor.
+   */
   start() {
-    if (!this.enabled) return;
-    this.checkInterval = setInterval(() => {
-      this.checkHunger().catch(() => {});
-    }, 5000);
+    // No-op — arbitrated via FastBrain's Perception → eat_food task pipeline.
   }
 
   stop() {

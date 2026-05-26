@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { MinecraftBot } from "./MinecraftBot.js";
 import type { BotConfig, BotStatus, CreateBotRequest } from "./types.js";
+import type { BotRole } from "./core/SharedWorldModel.js";
 import { logger } from "../lib/logger.js";
 
 const DEFAULT_BEHAVIOR = {
@@ -15,7 +16,7 @@ const DEFAULT_BEHAVIOR = {
 class BotManager {
   private bots = new Map<string, MinecraftBot>();
 
-  async createBot(request: CreateBotRequest): Promise<MinecraftBot> {
+  async createBot(request: CreateBotRequest & { role?: BotRole }): Promise<MinecraftBot> {
     const id = randomUUID();
     const config: BotConfig = {
       host: request.host,
@@ -27,7 +28,7 @@ class BotManager {
       behavior: { ...DEFAULT_BEHAVIOR, ...request.behavior },
     };
 
-    const bot = new MinecraftBot(id, config);
+    const bot = new MinecraftBot(id, config, request.role ?? "generalist");
     this.bots.set(id, bot);
 
     try {

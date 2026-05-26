@@ -1,0 +1,171 @@
+The current architecture is strong because gameplay execution is separated from language interpretation. Continue evolving the system toward a true autonomous agent framework while preserving the hard boundary between deterministic gameplay systems and probabilistic LLM reasoning.
+
+Do NOT rewrite the system into an “LLM controls everything” architecture. Maintain the existing principle:
+- Fast systems execute
+- Slow systems interpret
+- Structured planners coordinate
+
+The next major milestone should be a hierarchical task-planning and memory architecture.
+
+Implement a Planner layer between SlowBrain and FastBrain.
+
+Current flow:
+Player → SlowBrain → FastBrain
+
+Target flow:
+Player → SlowBrain → Planner → Action Graph → FastBrain Executors
+
+The Planner should:
+- Convert high-level goals into multi-step executable plans
+- Support dependency ordering
+- Handle retries and recovery
+- Track completion state
+- Allow interruption/resume behavior
+- Support nested subtasks
+
+Example:
+“Build a cabin” becomes:
+1. Check inventory
+2. Gather required wood
+3. Craft planks
+4. Clear terrain
+5. Build structure
+6. Add lighting
+7. Store leftovers
+
+The Planner must NOT directly manipulate Mineflayer APIs. It should only issue abstract tasks.
+
+Create a generalized task object structure:
+- id
+- type
+- target
+- priority
+- status
+- prerequisites
+- timeout
+- retry count
+- interruptibility
+- metadata
+
+Add persistent memory systems with clear separation of concerns:
+
+Short-Term Memory:
+- Recent chat
+- Current target
+- Nearby threats
+- Temporary objectives
+- Recent failures
+
+Episodic Memory:
+- Significant world events
+- Interactions with players
+- Resource discoveries
+- Combat encounters
+- Death locations
+- Successful builds
+
+Semantic Memory:
+- Base locations
+- Storage systems
+- Farms
+- Faction/player ownership
+- Safe zones
+- Danger zones
+- Known resource sites
+
+The bot should begin forming a stable world model rather than acting statelessly.
+
+Implement an Action Arbitration system.
+
+Current systems appear capable of conflicting with each other:
+- Combat
+- Mining
+- Building
+- Following
+- Eating
+- Escaping
+
+Create a central arbitration layer that:
+- Assigns priorities dynamically
+- Handles interrupts safely
+- Prevents action conflicts
+- Queues lower-priority actions
+- Supports emergency overrides
+
+Priority example:
+CRITICAL:
+- Escape lava
+- Avoid death
+- Eat at critical hunger
+
+HIGH:
+- Combat
+- Defend player
+
+NORMAL:
+- Mining
+- Building
+- Exploration
+
+LOW:
+- Idle behavior
+- Emotes
+- Social ambient actions
+
+Implement a unified perception/world-state abstraction.
+
+Avoid duplicated environmental scanning logic inside every subsystem.
+
+Create a shared perception layer that continuously updates:
+- Nearby entities
+- Threats
+- Terrain
+- Inventory
+- Objectives
+- Environmental hazards
+- Resource opportunities
+
+All systems should consume this shared state rather than independently scanning Minecraft state repeatedly.
+
+Expand humanization carefully.
+
+Do not make the bot intentionally incompetent, but make behavior feel organic:
+- Contextual pauses
+- Small navigation hesitation
+- Head tracking toward events
+- Idle inspection behavior
+- Attention shifts
+- Situational reactions
+- Occasional repositioning
+
+The goal is believable presence, not random chaos.
+
+Implement telemetry and self-analysis.
+
+Every major task should record:
+- Goal
+- Duration
+- Success/failure
+- Failure reason
+- Resources consumed
+- Interruptions
+
+Periodically summarize operational failures and inefficiencies internally so future planning can adapt.
+
+Do not frame this as consciousness or sentience. This is operational introspection and autonomous systems analysis only.
+
+Maintain compatibility with:
+- Ollama
+- OpenAI
+- Anthropic
+
+Continue emphasizing provider abstraction.
+
+Finally, begin designing the backend around future multi-agent coordination:
+- Shared memory
+- Distributed task assignment
+- Cooperative planning
+- Resource coordination
+- Role specialization
+
+The architecture should evolve toward scalable autonomous NPC ecosystems rather than isolated command bots.
