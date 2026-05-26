@@ -32,6 +32,21 @@ description: Two-layer bot architecture (deterministic gameplay vs probabilistic
 - `follow_player` intentionally never naturally completes — it runs until preempted, cancelled, or times out. That's the policy.
 - `ensure_inventory` known limitation: maps items → mining resource (`planks → wood`). No crafting layer. If mining doesn't yield the literal item name (e.g. need `oak_planks` but mined `oak_log`), it logs and continues; downstream `build_structure` may fail with unmet materials. Document this when adding new structures.
 
+## Cognitive Economy Modes
+Controlled by `CognitiveMode` on `BotConfig` / `SlowBrain`. Switch at runtime via `PATCH /api/bots/:id/mode`.
+
+| Mode | Behavior |
+|---|---|
+| `deterministic` | No LLM. `parseLocalIntent()` in `MinecraftBot` maps keywords → `LLMIntent`. |
+| `lightweight` | Compact system prompt, history trimmed to 4, low max_tokens (advisory). |
+| `balanced` | Default. Full prompt, 6-message history. |
+| `auto` | `selectAutoMode()` in `SlowBrain` picks: combat/low-health → lightweight; long/complex message → deep-reasoning; simple keyword → lightweight; else balanced. |
+| `deep-reasoning` | Extended prompt, 10-message history, inventory context doubled. |
+
+**Hard rule:** no mode bypasses Planner → Arbitrator → Executor. Mode only affects whether/how SlowBrain produces an `LLMIntent`. FastBrain and Arbitrator are always deterministic.
+
+**Extension point:** `getModeConfig()` returns `maxTokens` — wired to providers when they support it (currently `void`-dropped; add third arg to `LLMProvider.chat` when needed).
+
 ## Externals & gotchas
 - `mineflayer` + `mineflayer-pathfinder` must be esbuild externals — they have native deps and dynamic requires that can't be bundled.
 - Bot only responds in chat when its username is mentioned or message starts with `!` / `.` / `@all`.

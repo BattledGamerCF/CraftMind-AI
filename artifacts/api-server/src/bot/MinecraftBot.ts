@@ -1,11 +1,36 @@
 import mineflayer from "mineflayer";
 import type { Bot } from "mineflayer";
-import type { BotConfig, BotStatus, LLMIntent } from "./types.js";
+import type { BotConfig, BotStatus, CognitiveMode, LLMIntent } from "./types.js";
 import { FastBrain } from "./FastBrain.js";
 import { SlowBrain } from "./SlowBrain.js";
 import { createLLMProvider } from "./llm/ProviderFactory.js";
 import { sharedWorldModel, type BotRole } from "./core/SharedWorldModel.js";
 import { logger } from "../lib/logger.js";
+
+/**
+ * Parse a player chat message into a deterministic LLMIntent using keyword matching.
+ * Used when cognitiveMode === "deterministic" to skip the LLM entirely.
+ */
+function parseLocalIntent(message: string): LLMIntent | null {
+  const m = message.toLowerCase().trim();
+  if (/\bstop\b/.test(m)) return { intent: "stop" };
+  if (/\bfollow\b/.test(m)) return { intent: "follow_player" };
+  if (/\bcome\b/.test(m)) return { intent: "come_here" };
+  if (/\bexplore\b/.test(m)) return { intent: "explore" };
+  if (/\b(status|report)\b/.test(m)) return { intent: "report_status" };
+  if (/\b(defend|fight|attack)\b/.test(m)) return { intent: "defend_self" };
+  if (/\b(eat|food|hungry)\b/.test(m)) return { intent: "gather_food" };
+  const mineMatch = m.match(/\bmine\b.*?\b(wood|stone|coal|iron|diamond|log)\b/);
+  if (mineMatch) return { intent: "mine_resource", target: mineMatch[1] };
+  if (/\bmine\b/.test(m)) return { intent: "mine_resource", target: "wood" };
+  const buildMatch = m.match(/\bbuild\b.*?\b(cabin|shelter|oak_cabin|simple_shelter)\b/);
+  if (buildMatch) {
+    const target = /cabin/.test(buildMatch[1] ?? "") ? "oak_cabin" : "simple_shelter";
+    return { intent: "build_structure", target };
+  }
+  if (/\bbuild\b/.test(m)) return { intent: "build_structure", target: "simple_shelter" };
+  return null;
+}
 
 export class MinecraftBot {
   readonly id: string;
@@ -24,7 +49,15 @@ export class MinecraftBot {
     this.config = config;
     this.role = role;
     const llm = createLLMProvider(config.llm);
-    this.slowBrain = new SlowBrain(llm);
+    this.slowBrain = new SlowBrain(llm, config.cognitiveMode ?? "balanced");
+  }
+
+  setMode(mode: CognitiveMode) {
+    this.slowBrain.setMode(mode);
+  }
+
+  getMode(): CognitiveMode {
+    return this.slowBrain.getMode();
   }
 
   async connect(): Promise<void> {
@@ -127,7 +160,21 @@ export class MinecraftBot {
 
     if (!cleanMessage) return;
 
-    logger.debug({ username, message: cleanMessage }, "Processing player message");
+    logger.debug({ username, message: cleanMessage, mode: this.slowBrain.getMode() }, "Processing player message");
+
+    // Deterministic mode: parse locally, skip LLM
+    if (this.slowBrain.getMode() === "deterministic") {
+      const intent = parseLocalIntent(cleanMessage);
+      if (intent && this.fastBrain) {
+        this.fastBrain.memory.episodic.record({
+          kind: "player_interaction",
+          description: `${username}: "${cleanMessage}" → ${intent.intent} (deterministic)`,
+          participants: [username],
+        });
+        this.fastBrain.submitIntent(intent);
+      }
+      return;
+    }
 
     try {
       const intent = await this.slowBrain.processChat(username, cleanMessage, {
@@ -192,6 +239,7 @@ export class MinecraftBot {
       server: `${this.config.host}:${this.config.port}`,
       chatHistory: this.fastBrain?.social.getHistory() ?? [],
       currentTask: this.fastBrain?.getCurrentTask() ?? null,
+      cognitiveMode: this.slowBrain.getMode(),
     };
   }
 

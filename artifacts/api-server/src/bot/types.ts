@@ -1,5 +1,16 @@
 export type LLMProviderType = "ollama" | "openai" | "anthropic";
 
+/**
+ * Cognitive Economy Mode — controls how much LLM reasoning the bot applies.
+ *
+ * deterministic  No LLM. Chat is parsed locally via keyword matching.
+ * lightweight    LLM called with compressed prompts and low max_tokens.
+ * balanced       Default. Current behavior.
+ * auto           Dynamically escalates based on context signals (health, complexity, urgency).
+ * deep-reasoning Larger prompts, higher max_tokens — for planning-heavy or novel tasks.
+ */
+export type CognitiveMode = "deterministic" | "lightweight" | "balanced" | "auto" | "deep-reasoning";
+
 export type BotState =
   | "idle"
   | "following"
@@ -19,6 +30,7 @@ export interface BotConfig {
   auth?: "offline" | "microsoft";
   llm: LLMConfig;
   behavior: BehaviorConfig;
+  cognitiveMode?: CognitiveMode;
 }
 
 export interface LLMConfig {
@@ -87,6 +99,7 @@ export interface BotStatus {
   server: string;
   chatHistory: ChatMessage[];
   currentTask: string | null;
+  cognitiveMode: CognitiveMode;
 }
 
 export interface CreateBotRequest {

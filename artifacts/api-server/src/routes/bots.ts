@@ -2,7 +2,10 @@ import { Router, type IRouter } from "express";
 import { botManager } from "../bot/BotManager.js";
 import { listStructures } from "../bot/structures/StructureRegistry.js";
 import { sharedWorldModel } from "../bot/core/SharedWorldModel.js";
+import type { CognitiveMode } from "../bot/types.js";
 import { logger } from "../lib/logger.js";
+
+const VALID_MODES = new Set<CognitiveMode>(["deterministic", "lightweight", "balanced", "auto", "deep-reasoning"]);
 
 const router: IRouter = Router();
 
@@ -157,6 +160,25 @@ router.get("/bots/:id/telemetry", (req, res) => {
     failures: bot.fastBrain.telemetry.summarizeFailures(windowMs),
     recent: bot.fastBrain.telemetry.getRecords(50),
   });
+});
+
+router.get("/bots/:id/mode", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({ mode: bot.getMode() });
+});
+
+router.patch("/bots/:id/mode", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  const { mode } = req.body as { mode?: string };
+  if (!mode || !VALID_MODES.has(mode as CognitiveMode)) {
+    res.status(400).json({ error: `mode must be one of: ${[...VALID_MODES].join(", ")}` });
+    return;
+  }
+  bot.setMode(mode as CognitiveMode);
+  logger.info({ id: req.params["id"], mode }, "Cognitive mode changed via API");
+  res.json({ mode });
 });
 
 router.get("/swarm", (_req, res) => {
