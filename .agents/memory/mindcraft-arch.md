@@ -121,6 +121,36 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Stabilization & Packaging (Phase 8)
+
+### `src/bot/presets.ts` — 4 exported bot presets
+- `minimal_companion`: lightweight/companion/no-combat — safe co-op
+- `stable_worker`: balanced/worker/combat — mining+building server assistant
+- `safe_observer`: lightweight/safe/no-combat — monitor/tour-guide
+- `explorer_light`: balanced/adventurer/combat — exploration+resources
+- Type is `BotPreset` (local interface — auth, llm, behavior, cognitiveMode, playstyle)
+- Spread into POST /api/bots body; override host/port/username
+
+### `SlowBrain` — keyword fallback on LLM failure
+- `keywordFallback(playerName, message)` — called from catch block instead of `return null`
+- Matches: follow/come → follow_player; stop/halt/wait → stop; mine/dig/gather → mine_resource; build/construct → build_structure
+- Returns `{ source: "deterministic" }` intent; works with no Ollama/API key running
+
+### Task queue ceiling (`FastBrain.submitIntent`)
+- Before `enqueueMany`: checks `arbitrator.getQueue().length >= config.safety.maxTasksInQueue`
+- Evicts LOW/NORMAL pending tasks to make room; if still full → returns `{ planId: "queue_full" }`
+- Controlled by `config.safety.maxTasksInQueue` (`MINDCRAFT_MAX_TASKS=10`)
+- FastBrain now imports `config` from `"../config.js"` (was missing, required adding)
+
+### README.md (root) — final practical pass
+- First Run section (5-step zero-config path)
+- Preset table (4 rows) with REST body example
+- Debug mode section
+- Complete env var table (includes LLM_MAX_CALLS_PER_MINUTE, MINDCRAFT_MAX_TASKS, MINDCRAFT_DEBUG)
+- Troubleshooting quick table (10 symptom→fix rows)
+- Performance tuning knobs table
+- /runtime response shape example
+
 ## Production Hardening (Phase 7)
 
 ### Debug mode (`config.debug.enabled` / `MINDCRAFT_DEBUG=true`)

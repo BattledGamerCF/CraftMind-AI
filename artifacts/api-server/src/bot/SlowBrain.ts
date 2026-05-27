@@ -126,10 +126,33 @@ export class SlowBrain {
         logger.debug({ err, provider: this.llm.providerName }, "SlowBrain LLM call failed");
       }
 
-      return null;
+      return this.keywordFallback(playerName, message);
     } finally {
       this.processing = false;
     }
+  }
+
+  /**
+   * Deterministic keyword fallback — used when the LLM is unavailable.
+   * Parses common commands so the bot remains responsive even with no model running.
+   */
+  private keywordFallback(playerName: string, message: string): CanonicalIntent | null {
+    const m = message.toLowerCase();
+    if (/\b(follow|come here|come to me|stay with)\b/.test(m)) {
+      return { intent: "follow_player", target: playerName, confidence: 0.7, source: "deterministic" };
+    }
+    if (/\b(stop|halt|wait|stand still|stay)\b/.test(m)) {
+      return { intent: "stop", confidence: 0.9, source: "deterministic" };
+    }
+    if (/\b(mine|dig|gather|collect|get (wood|stone|coal|iron|ore))\b/.test(m)) {
+      const resource = /wood/.test(m) ? "wood" : /stone/.test(m) ? "stone" : /coal/.test(m) ? "coal" : /iron/.test(m) ? "iron" : undefined;
+      return { intent: "mine_resource", target: resource, confidence: 0.7, source: "deterministic" };
+    }
+    if (/\b(build|make|construct|shelter|cabin|house)\b/.test(m)) {
+      const structure = /cabin/.test(m) ? "oak_cabin" : "simple_shelter";
+      return { intent: "build_structure", target: structure, confidence: 0.65, source: "deterministic" };
+    }
+    return null;
   }
 
   private buildContextString(context: SlowBrainContext, decision: CognitiveDecision): string {

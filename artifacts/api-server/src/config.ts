@@ -45,6 +45,7 @@ export const config = {
     autonomousWanderMaxBlocks: 200,
     maxRetryLoops: 5,
     llmMaxCallsPerMinute: Number(process.env["LLM_MAX_CALLS_PER_MINUTE"] ?? "20"),
+    maxTasksInQueue: Number(process.env["MINDCRAFT_MAX_TASKS"] ?? "10"),
   },
 
   debug: {

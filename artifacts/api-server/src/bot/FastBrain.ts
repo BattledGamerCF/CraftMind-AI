@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Bot } from "mineflayer";
+import { config } from "../config.js";
 import type { BotState, LLMIntent } from "./types.js";
 import { MovementSystem } from "./systems/MovementSystem.js";
 import { CombatSystem } from "./systems/CombatSystem.js";
@@ -452,6 +453,19 @@ export class FastBrain {
     const current = this.arbitrator.getCurrent();
     if (current && (current.priority === "NORMAL" || current.priority === "LOW") && current.interruptible) {
       this.arbitrator.cancel(current.id);
+    }
+
+    // Queue ceiling: drop lowest-priority pending tasks if at cap
+    const queue = this.arbitrator.getQueue();
+    const maxQ = config.safety.maxTasksInQueue;
+    if (queue.length >= maxQ) {
+      logger.warn({ queueLength: queue.length, maxQ, intent: intent.intent }, "Task queue at ceiling — dropping lowest-priority pending tasks");
+      const toDrop = queue.filter((t) => t.priority === "LOW" || t.priority === "NORMAL").slice(0, tasks.length);
+      for (const t of toDrop) this.arbitrator.cancel(t.id);
+      if (this.arbitrator.getQueue().length >= maxQ) {
+        logger.warn({ intent: intent.intent }, "Queue still full after eviction — dropping new tasks");
+        return { planId: "queue_full", taskCount: 0 };
+      }
     }
 
     this.memory.shortTerm.currentGoal = tasks[0]?.goal ?? intent.intent;
