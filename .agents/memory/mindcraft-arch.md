@@ -121,6 +121,42 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Behavioral Personality & Humanization Refinement
+
+### PlaystyleProfile (`bot/playstyle/PlaystyleProfile.ts`)
+- `PlaystyleName`: companion | worker | adventurer | safe | auto
+- `PlaystyleWeights`: 10 float fields (followDistance, explorationRange, autonomyLevel, riskTolerance, idleFrequency, socialFrequency, taskPersistence, combatAggressiveness, homeReturnBias, comfortRadius)
+- Fixed profiles are static; `auto` blends worker→safe (risk), worker→companion (players nearby), worker→adventurer (exploring), all→safe (night)
+- `PlaystyleProfile.resolve(ctx?)` → recomputes weights for auto every perception tick; fixed profiles return cached
+- Set via `POST /api/bots/:id/config playstyle` at creation or `PATCH /api/bots/:id/playstyle { profile }` at runtime
+
+### OperationalState (`computeOperationalState` in PlaystyleProfile.ts)
+- 4 states: stressed (risk ≥ 0.6) | curious (explore task) | focused (non-idle task) | relaxed (default)
+- Computed every perception tick in FastBrain; pushed to HumanizationSystem via `setOperationalState()`
+- Exposed via `GET /api/bots/:id/playstyle` as `operationalState`
+
+### HumanizationSystem refinements
+- Idle timer multiplier: stressed=3x, focused=2x, curious=0.7x, relaxed=1x
+- Look timer multiplier: stressed=0.5x (anxious scanning), focused=2.5x (rare)
+- Min look cooldown: 8s when focused, 4s otherwise — prevents look spam
+- Jump suppressed unless state=relaxed
+- Anti-pacing: `smallStep()` checks if bot moved < 2 blocks in last 10s; if not, skips to prevent in-place pacing
+
+### SocialSystem chat dedup
+- `sentMessages: Map<normalizedKey, lastSentAt>` — 30s dedup window
+- Normalized: lowercase, strip punctuation, first 40 chars
+- Auto-pruned when > 30 entries; prevents identical acknowledgements spamming chat
+
+### Playstyle in executors
+- `ExecutorDeps.playstyle?: PlaystyleWeights` — resolved weights passed at executor creation time
+- `follow_player`: uses `playstyle.followDistance` (default 3) passed to `MovementSystem.followPlayer(name, dist)` — GoalFollow now respects dynamic distance
+- `explore`: scales max range by `playstyle.explorationRange` multiplier
+- `idle`: gates ambient behaviors by `playstyle.idleFrequency` probability check
+
+### New endpoints
+- `GET /api/bots/:id/playstyle` → `{ name, weights, operationalState }`
+- `PATCH /api/bots/:id/playstyle { profile }` → switches named profile; validates against set
+
 ## Cognitive Economy Modes
 Controlled by `CognitiveMode` on `BotConfig` / `SlowBrain`. Switch at runtime via `PATCH /api/bots/:id/mode`.
 

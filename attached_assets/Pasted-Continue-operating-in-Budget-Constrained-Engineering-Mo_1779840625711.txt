@@ -1,0 +1,220 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Mode target: Economy.
+
+Implementation rules:
+- surgical edits only
+- minimal file reads
+- avoid broad rescans
+- avoid architecture rewrites
+- preserve stable interfaces
+- extend existing systems instead of replacing them
+
+The next development phase is:
+Behavioral Personality and Humanization Refinement.
+
+Primary objective:
+make the bot feel more naturally adaptive, less repetitive, and less annoying during long multiplayer sessions.
+
+Do NOT implement “random chaos behavior.”
+
+Randomization must always:
+- remain context-aware
+- remain subtle
+- preserve task competence
+- avoid interrupting players
+- avoid creating noise/spam
+
+The goal is believable variation, not unpredictability.
+
+1. Playstyle System
+
+Implement a lightweight PlaystyleProfile system.
+
+Profiles should modify:
+- follow distance
+- exploration tendency
+- autonomy level
+- risk tolerance
+- idle behavior frequency
+- social frequency
+- task persistence
+- combat aggressiveness
+- home-return preference
+- player proximity preference
+
+Initial profiles:
+
+companion
+- stays relatively close to players
+- more attentive/social
+- lower exploration range
+- higher follow responsiveness
+- lower autonomous wandering
+
+worker
+- task-focused
+- less social chatter
+- more autonomous resource gathering
+- longer uninterrupted work cycles
+- returns resources more consistently
+
+adventurer
+- higher exploration tendency
+- more curiosity behaviors
+- greater movement variance
+- more willing to travel farther
+- increased waypoint discovery
+
+safe
+- highly risk-averse
+- avoids night travel
+- avoids combat unless necessary
+- retreats aggressively
+- stays near home/player
+- prioritizes survival over objectives
+
+auto
+- dynamically blends profiles depending on:
+  - current task
+  - environment
+  - nearby players
+  - risk score
+  - time of day
+  - recent failures
+
+Profiles should act as weighted behavior modifiers, NOT separate logic trees.
+
+2. Humanization Refinement
+
+Improve subtle human-like variation:
+- occasional hesitation before movement
+- slight route correction pauses
+- attention shifts toward nearby activity
+- context-aware looking behavior
+- variable reaction timing
+- brief idle inspection behavior
+
+Important:
+humanization must NEVER:
+- break tasks
+- spam movements
+- interrupt combat
+- interfere with building precision
+- reduce reliability
+
+3. Anti-Annoyance Systems
+
+Implement safeguards against irritating behavior.
+
+Examples:
+- avoid repeated chat acknowledgements
+- avoid pacing in tiny areas
+- avoid staring directly at players constantly
+- avoid excessive jumping
+- avoid blocking doors/chests/workspaces
+- avoid repeatedly walking into players
+
+Add lightweight cooldowns and suppression rules for ambient behaviors.
+
+4. Contextual Ambient Actions
+
+Ambient actions should only occur when:
+- idle
+- following calmly
+- near trusted players
+- not under threat
+- not actively executing precision tasks
+
+Examples:
+- looking at nearby builds
+- shifting position slightly
+- inspecting placed blocks
+- sitting near home areas if supported later
+- facing conversations naturally
+
+5. Behavioral Variability
+
+Reduce repetitive patterns.
+
+Add lightweight weighted randomness to:
+- idle timing
+- path micro-adjustments
+- look duration
+- response delay
+- exploration direction preference
+
+But:
+- maintain deterministic planning
+- maintain reproducibility where important
+- avoid chaotic randomness
+
+6. Social Awareness
+
+Improve spatial awareness around players:
+- avoid crowding
+- avoid stepping into mining lines
+- avoid standing inside doors
+- yield space during building
+- reposition politely indoors
+
+Add “comfortable spacing” heuristics.
+
+7. Mood / State Influence (Lightweight)
+
+Do NOT create emotions or roleplay systems.
+
+Instead implement lightweight operational state modifiers:
+- stressed (high risk)
+- relaxed (safe/home)
+- focused (task-heavy)
+- curious (exploration)
+
+These states should subtly influence:
+- movement pacing
+- idle frequency
+- exploration tendency
+- social responsiveness
+
+Keep this entirely behavioral and mechanical.
+
+8. Stability Requirements
+
+All ambient/humanization systems must:
+- remain abortable
+- respect Arbitrator priorities
+- pause during combat/danger
+- avoid spawning duplicate tasks
+- avoid planner churn
+
+Humanization should layer on top of stability, not fight it.
+
+9. Configuration
+
+Expose:
+- current playstyle
+- playstyle switching API
+- ambient behavior intensity
+- autonomy level
+- social frequency
+
+via lightweight API endpoints/config only.
+
+Do NOT build frontend UI yet.
+
+10. Cost Discipline
+
+Continue minimizing:
+- broad scans
+- repeated typechecks
+- large autonomous edits
+- architecture narration
+- unnecessary refactors
+
+Focus on:
+- compact targeted patches
+- behavioral tuning
+- local verification
+- incremental progress
+
+The project is now evolving from “functional autonomous bot” into “believable long-session companion AI.”

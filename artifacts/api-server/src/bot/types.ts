@@ -31,6 +31,7 @@ export interface BotConfig {
   llm: LLMConfig;
   behavior: BehaviorConfig;
   cognitiveMode?: CognitiveMode;
+  playstyle?: "companion" | "worker" | "adventurer" | "safe" | "auto";
 }
 
 export interface LLMConfig {

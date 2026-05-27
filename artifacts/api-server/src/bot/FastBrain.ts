@@ -20,11 +20,14 @@ import { registerDefaultPlans } from "./plans/index.js";
 import { createDefaultExecutors } from "./executors/index.js";
 import { RiskAssessor } from "./systems/RiskAssessor.js";
 import { CraftingSystem } from "./systems/CraftingSystem.js";
+import { PlaystyleProfile, computeOperationalState } from "./playstyle/PlaystyleProfile.js";
+import type { PlaystyleName, OperationalState } from "./playstyle/PlaystyleProfile.js";
 import { logger } from "../lib/logger.js";
 
 export interface FastBrainConfig {
   humanize?: boolean;
   autoEat?: boolean;
+  playstyle?: PlaystyleName;
   defendSelf?: boolean;
   chatCooldown?: number;
 }
@@ -66,6 +69,8 @@ export class FastBrain {
   private hazardWatcherStop: (() => void) | null = null;
   private pruneInterval: NodeJS.Timeout | null = null;
   crafting: CraftingSystem;
+  playstyle: PlaystyleProfile;
+  operationalState: OperationalState = "relaxed";
   private riskAssessor = new RiskAssessor();
   private readonly intentFailures = new Map<string, { count: number; cooledUntil: number }>();
 
@@ -80,6 +85,7 @@ export class FastBrain {
     this.hunger = new HungerSystem(bot, config.autoEat ?? true);
     this.social = new SocialSystem(bot, config.chatCooldown ?? 3000);
     this.crafting = new CraftingSystem(bot);
+    this.playstyle = new PlaystyleProfile(config.playstyle ?? "auto");
 
     this.perception = new Perception(bot);
     this.memory = new MemoryStore();
@@ -105,6 +111,7 @@ export class FastBrain {
       social: this.social,
       perception: this.perception,
       crafting: this.crafting,
+      playstyle: this.playstyle.getWeights(),
       setHome: (pos) => this.memory.semantic.setHome(pos),
       getHome: () => this.memory.semantic.getHome()?.position ?? null,
     });
@@ -143,7 +150,17 @@ export class FastBrain {
       const tod = (this.bot as unknown as { time?: { timeOfDay?: number } }).time?.timeOfDay ?? 0;
       const risk = this.riskAssessor.assess(snap, this.inventory, tod);
 
+      // Derive operational state and update playstyle auto-blend
       const current = this.arbitrator.getCurrent();
+      this.operationalState = computeOperationalState(risk.value, current?.type);
+      this.humanization.setOperationalState(this.operationalState);
+      const isNight = tod > 13_000 && tod < 23_000;
+      this.playstyle.resolve({
+        riskScore: risk.value,
+        currentTaskType: current?.type,
+        nearbyPlayerCount: Object.keys(this.bot.players).filter((n) => n !== this.bot.username).length,
+        isNight,
+      });
       const alreadyEngaging = current?.type === "engage_hostile" || current?.type === "flee_threat";
 
       // Hostile within 8 blocks → engage or flee (risk-weighted)

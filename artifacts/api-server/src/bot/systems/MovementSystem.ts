@@ -157,7 +157,7 @@ export class MovementSystem {
     await new Promise<void>((r) => setTimeout(r, 400));
   }
 
-  followPlayer(playerName: string) {
+  followPlayer(playerName: string, distance = 3) {
     const pfBot = this.pfBot;
     if (!pfBot || !this.goals) return;
 
@@ -169,7 +169,7 @@ export class MovementSystem {
       if (movements) pfBot.pathfinder.setMovements(movements);
 
       const g = this.goals as Record<string, new (...args: unknown[]) => unknown>;
-      const goal = new g["GoalFollow"](player.entity, 3);
+      const goal = new g["GoalFollow"](player.entity, Math.round(distance));
       pfBot.pathfinder.setGoal(goal, true);
       this.active = true;
     } catch (err) {

@@ -9,6 +9,7 @@ import type { InventorySystem } from "../systems/InventorySystem.js";
 import type { SocialSystem } from "../systems/SocialSystem.js";
 import type { Perception } from "../core/Perception.js";
 import type { CraftingSystem } from "../systems/CraftingSystem.js";
+import type { PlaystyleWeights } from "../playstyle/PlaystyleProfile.js";
 import { getStructure } from "../structures/StructureRegistry.js";
 import { logger } from "../../lib/logger.js";
 
@@ -40,6 +41,7 @@ export interface ExecutorDeps {
   social: SocialSystem;
   perception: Perception;
   crafting?: CraftingSystem;
+  playstyle?: PlaystyleWeights;
   setHome?: (pos: { x: number; y: number; z: number }) => void;
   getHome?: () => { x: number; y: number; z: number } | null;
 }
@@ -110,7 +112,7 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
       async execute(task, signal) {
         const target = task.target;
         if (!target) return;
-        deps.movement.followPlayer(target);
+        deps.movement.followPlayer(target, deps.playstyle?.followDistance ?? 3);
         await new Promise<void>((resolve) => {
           if (signal.aborted) { resolve(); return; }
           signal.addEventListener("abort", () => { deps.movement.stop(); resolve(); }, { once: true });
@@ -174,8 +176,9 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
           }
         }
 
-        // Pick a direction, prefer cells not recently visited
-        const dist = night ? 10 + Math.random() * 10 : 20 + Math.random() * 40;
+        // Pick a direction, prefer cells not recently visited; scale by playstyle
+        const rangeScale = deps.playstyle?.explorationRange ?? 1;
+        const dist = (night ? 10 + Math.random() * 10 : 20 + Math.random() * 40) * rangeScale;
         let target = { x: pos.x, y: pos.y, z: pos.z };
         for (let attempt = 0; attempt < 6; attempt++) {
           const angle = Math.random() * Math.PI * 2;
@@ -263,6 +266,12 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
       type: "idle",
       async execute(_task, signal) {
         if (signal.aborted) return;
+
+        // Playstyle gate: low idleFrequency bots skip ambient behaviors
+        if (Math.random() > (deps.playstyle?.idleFrequency ?? 0.6)) {
+          await new Promise<void>((r) => setTimeout(r, 3000 + Math.random() * 2000));
+          return;
+        }
 
         // Subtle idle behaviors — pick one or two non-disruptive actions
         const behaviors: Array<() => Promise<void>> = [

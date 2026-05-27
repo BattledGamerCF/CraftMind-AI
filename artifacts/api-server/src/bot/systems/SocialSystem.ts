@@ -9,6 +9,8 @@ export class SocialSystem {
   private lastChatTime = 0;
   private chatCooldown: number;
   private onChatCallback: ((username: string, message: string) => void) | null = null;
+  private sentMessages = new Map<string, number>(); // normalized text → lastSentAt
+  private readonly DEDUP_WINDOW = 30_000;
 
   constructor(bot: Bot, chatCooldown = 3000) {
     this.bot = bot;
@@ -37,10 +39,25 @@ export class SocialSystem {
     }
   }
 
+  private isDuplicateMessage(message: string): boolean {
+    // Normalize: lowercase, strip punctuation, first 40 chars
+    const key = message.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().slice(0, 40);
+    const last = this.sentMessages.get(key);
+    if (last && Date.now() - last < this.DEDUP_WINDOW) return true;
+    this.sentMessages.set(key, Date.now());
+    // Prune old entries
+    if (this.sentMessages.size > 30) {
+      const cutoff = Date.now() - this.DEDUP_WINDOW;
+      for (const [k, t] of this.sentMessages) if (t < cutoff) this.sentMessages.delete(k);
+    }
+    return false;
+  }
+
   async say(message: string): Promise<void> {
     const now = Date.now();
     if (now - this.lastChatTime < this.chatCooldown) return;
     if (!message.trim()) return;
+    if (this.isDuplicateMessage(message)) return;
 
     this.lastChatTime = now;
     try {

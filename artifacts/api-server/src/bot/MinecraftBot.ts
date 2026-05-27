@@ -338,6 +338,18 @@ export class MinecraftBot {
     return this.trust.snapshot();
   }
 
+  getPlaystyle() {
+    return this.fastBrain?.playstyle.snapshot() ?? { name: "auto" as const, weights: {} };
+  }
+
+  setPlaystyle(name: "companion" | "worker" | "adventurer" | "safe" | "auto") {
+    this.fastBrain?.playstyle.setProfile(name);
+  }
+
+  getOperationalState() {
+    return this.fastBrain?.operationalState ?? "relaxed";
+  }
+
   getRole(): BotRole {
     return this.role;
   }

@@ -196,6 +196,27 @@ router.get("/bots/:id/trust", (req, res) => {
   res.json({ trust: bot.getTrustSnapshot() });
 });
 
+const VALID_PLAYSTYLES = new Set(["companion", "worker", "adventurer", "safe", "auto"]);
+
+router.get("/bots/:id/playstyle", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  res.json({ ...bot.getPlaystyle(), operationalState: bot.getOperationalState() });
+});
+
+router.patch("/bots/:id/playstyle", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  const { profile } = req.body as { profile?: string };
+  if (!profile || !VALID_PLAYSTYLES.has(profile)) {
+    res.status(400).json({ error: `profile must be one of: ${[...VALID_PLAYSTYLES].join(", ")}` });
+    return;
+  }
+  bot.setPlaystyle(profile as Parameters<typeof bot.setPlaystyle>[0]);
+  logger.info({ id: req.params["id"], profile }, "Playstyle changed via API");
+  res.json({ ...bot.getPlaystyle(), operationalState: bot.getOperationalState() });
+});
+
 router.get("/swarm", (_req, res) => {
   res.json({ bots: sharedWorldModel.getBots() });
 });

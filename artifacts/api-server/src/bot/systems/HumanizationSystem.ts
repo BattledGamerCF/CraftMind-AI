@@ -1,4 +1,5 @@
 import type { Bot } from "mineflayer";
+import type { OperationalState } from "../playstyle/PlaystyleProfile.js";
 import { logger } from "../../lib/logger.js";
 
 function randomBetween(min: number, max: number): number {
@@ -14,10 +15,18 @@ export class HumanizationSystem {
   private idleTimer: NodeJS.Timeout | null = null;
   private lookTimer: NodeJS.Timeout | null = null;
   private enabled: boolean;
+  private operationalState: OperationalState = "relaxed";
+  private lastLookTime = 0;
+  private lastPosition = { x: 0, y: 0, z: 0 };
+  private lastPositionTime = 0;
 
   constructor(bot: Bot, enabled = true) {
     this.bot = bot;
     this.enabled = enabled;
+  }
+
+  setOperationalState(state: OperationalState) {
+    this.operationalState = state;
   }
 
   start() {
@@ -32,7 +41,12 @@ export class HumanizationSystem {
   }
 
   private scheduleIdleBehavior() {
-    const delay = randomBetween(8000, 30000);
+    // Stressed/focused bots idle less often; curious bots idle more
+    const multiplier = this.operationalState === "stressed" ? 3
+      : this.operationalState === "focused" ? 2
+      : this.operationalState === "curious" ? 0.7
+      : 1;
+    const delay = randomBetween(8000, 30000) * multiplier;
     this.idleTimer = setTimeout(() => {
       this.doIdleBehavior().catch(() => {});
       this.scheduleIdleBehavior();
@@ -40,7 +54,11 @@ export class HumanizationSystem {
   }
 
   private scheduleLookAround() {
-    const delay = randomBetween(3000, 12000);
+    // Stressed bots look around more often (anxious); focused bots rarely break gaze
+    const multiplier = this.operationalState === "stressed" ? 0.5
+      : this.operationalState === "focused" ? 2.5
+      : 1;
+    const delay = randomBetween(3000, 12000) * multiplier;
     this.lookTimer = setTimeout(() => {
       this.doLookAround().catch(() => {});
       this.scheduleLookAround();
@@ -49,11 +67,15 @@ export class HumanizationSystem {
 
   private async doIdleBehavior() {
     if (!this.enabled) return;
+    // Suppress all idle motion during stressed or focused states
+    if (this.operationalState === "stressed" || this.operationalState === "focused") return;
+
     const roll = Math.random();
     try {
       if (roll < 0.25) {
         await this.smallStep();
-      } else if (roll < 0.45) {
+      } else if (roll < 0.35 && this.operationalState === "relaxed") {
+        // Jump only when fully relaxed — not curious/focused/stressed
         await this.doJump();
       } else if (roll < 0.65) {
         await this.inspectNearbyBlock();
@@ -64,6 +86,11 @@ export class HumanizationSystem {
 
   private async doLookAround() {
     if (!this.enabled) return;
+    // Enforce minimum look cooldown to prevent look spam
+    const now = Date.now();
+    const minCooldown = this.operationalState === "focused" ? 8000 : 4000;
+    if (now - this.lastLookTime < minCooldown) return;
+    this.lastLookTime = now;
     try {
       const yaw = this.bot.entity.yaw + randomBetween(-0.8, 0.8);
       const pitch = randomBetween(-0.4, 0.3);
@@ -124,12 +151,28 @@ export class HumanizationSystem {
   }
 
   private async smallStep() {
-    const { x, z } = this.bot.entity.position;
+    const pos = this.bot.entity.position;
+    const now = Date.now();
+
+    // Anti-pacing: suppress small steps if we haven't moved meaningfully in 10s
+    const elapsed = now - this.lastPositionTime;
+    if (elapsed > 10_000) {
+      const dx = pos.x - this.lastPosition.x;
+      const dz = pos.z - this.lastPosition.z;
+      const movedDist = Math.sqrt(dx * dx + dz * dz);
+      this.lastPosition = { x: pos.x, y: pos.y, z: pos.z };
+      this.lastPositionTime = now;
+      if (movedDist < 2) return; // suppressed — bot is pacing in place
+    } else if (this.lastPositionTime === 0) {
+      this.lastPosition = { x: pos.x, y: pos.y, z: pos.z };
+      this.lastPositionTime = now;
+    }
+
     const dx = randomBetween(-0.5, 0.5);
     const dz = randomBetween(-0.5, 0.5);
     this.bot.setControlState("sneak", true);
     await this.bot.lookAt(
-      { x: x + dx, y: this.bot.entity.position.y, z: z + dz } as Parameters<Bot["lookAt"]>[0],
+      { x: pos.x + dx, y: pos.y, z: pos.z + dz } as Parameters<Bot["lookAt"]>[0],
       false
     );
     await new Promise<void>((r) => setTimeout(r, randomInt(200, 500)));
