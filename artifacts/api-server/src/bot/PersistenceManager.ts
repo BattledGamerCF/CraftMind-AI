@@ -24,6 +24,11 @@ export interface PersistedState {
     interactions: number;
     commandsIssued: number;
   }>;
+  habits?: {
+    idleSpots: Array<{ k: string; x: number; y: number; z: number; weight: number; lastSeen: number }>;
+    dangerMarks: Array<{ x: number; z: number; weight: number; expiry: number }>;
+    players: Array<{ name: string; interactions: number; lastSeen: number }>;
+  };
 }
 
 export class PersistenceManager {

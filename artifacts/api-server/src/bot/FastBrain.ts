@@ -23,6 +23,7 @@ import { CraftingSystem } from "./systems/CraftingSystem.js";
 import { PlaystyleProfile, computeOperationalState } from "./playstyle/PlaystyleProfile.js";
 import type { PlaystyleName, OperationalState } from "./playstyle/PlaystyleProfile.js";
 import { ZoneClassifier } from "./core/ZoneClassifier.js";
+import { HabitStore } from "./core/HabitStore.js";
 import { logger } from "../lib/logger.js";
 
 export interface FastBrainConfig {
@@ -71,6 +72,7 @@ export class FastBrain {
   private pruneInterval: NodeJS.Timeout | null = null;
   private zoneInterval: NodeJS.Timeout | null = null;
   private zoneClassifier: ZoneClassifier;
+  habits: HabitStore;
   crafting: CraftingSystem;
   playstyle: PlaystyleProfile;
   operationalState: OperationalState = "relaxed";
@@ -90,6 +92,7 @@ export class FastBrain {
     this.crafting = new CraftingSystem(bot);
     this.playstyle = new PlaystyleProfile(config.playstyle ?? "auto");
     this.zoneClassifier = new ZoneClassifier(bot);
+    this.habits = new HabitStore();
 
     this.perception = new Perception(bot);
     this.memory = new MemoryStore();
@@ -116,6 +119,7 @@ export class FastBrain {
       perception: this.perception,
       crafting: this.crafting,
       playstyle: this.playstyle.getWeights(),
+      habits: this.habits,
       setHome: (pos) => this.memory.semantic.setHome(pos),
       getHome: () => this.memory.semantic.getHome()?.position ?? null,
     });
@@ -124,7 +128,7 @@ export class FastBrain {
     // Wire arbitrator → episodic memory & short-term failure tracking
     this.arbitrator.setOnTaskComplete((task) => this.onTaskComplete(task));
 
-    // Chat: humanized situational reaction + store + forward
+    // Chat: humanized situational reaction + store + forward + habit recording
     this.social.setup((username, message) => {
       this.memory.shortTerm.pushChat({ timestamp: Date.now(), username, message, type: "chat" });
       this.humanization.situationalReaction().catch(() => {});
@@ -132,6 +136,7 @@ export class FastBrain {
       if (player?.entity) {
         this.humanization.lookAtEvent(player.entity.position).catch(() => {});
       }
+      this.habits.recordPlayerInteraction(username);
       onChat(username, message);
     });
 
@@ -144,11 +149,17 @@ export class FastBrain {
     this.humanization.start();
     this.perception.start(500);
 
-    // Initial zone classification then every 10 s
+    // Initial zone classification then every 10 s; also update familiarity from habits
     const updateZone = () => {
       const home = this.memory.semantic.getHome()?.position;
       const zone = this.zoneClassifier.classify(home);
       this.humanization.setZone(zone);
+      // Familiarity: how much idle time has been spent near current position
+      const pos = this.bot.entity?.position;
+      if (pos) {
+        const fam = this.habits.getLocationFamiliarity(pos);
+        this.humanization.setFamiliarity(fam);
+      }
     };
     updateZone();
     this.zoneInterval = setInterval(updateZone, 10_000);
@@ -307,8 +318,11 @@ export class FastBrain {
       logger.debug("Bot died");
     });
 
-    // Periodic prune of completed tasks (keeps queue clean)
-    this.pruneInterval = setInterval(() => this.arbitrator.pruneCompleted(), 60_000);
+    // Periodic prune + habit decay
+    this.pruneInterval = setInterval(() => {
+      this.arbitrator.pruneCompleted();
+      this.habits.decay();
+    }, 60_000);
   }
 
   private submitCombatTask(entity: { type: string; name?: string; position: { x: number; y: number; z: number } } & { id?: number }, action: "attack" | "flee") {

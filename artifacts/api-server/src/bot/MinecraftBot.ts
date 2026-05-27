@@ -96,6 +96,7 @@ export class MinecraftBot {
             }
           }
           if (saved.trustPlayers) this.trust.restore(saved.trustPlayers);
+          if (saved.habits) this.fastBrain!.habits.restore(saved.habits);
         }
 
         // Autosave every 60 s
@@ -376,6 +377,7 @@ export class MinecraftBot {
         interactions: p.interactions,
         commandsIssued: p.commandsIssued,
       })),
+      habits: this.fastBrain?.habits.serialize(),
     };
   }
 

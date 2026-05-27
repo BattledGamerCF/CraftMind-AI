@@ -121,6 +121,40 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Behavioral Continuity & Habit Formation (Phase 5)
+
+### HabitStore (`bot/core/HabitStore.ts`)
+- Idle-spot grid: 4-block cells; max 25 entries; evicts lowest-weight on overflow
+- `recordIdlePosition(pos)` / `getPreferredIdleSpot(near, maxDist)` — weighted-random (needs weight > 2 to be eligible)
+- `recordDangerArea(pos, durationMs=90min)` / `isDangerousArea(x, z, radius=24)` — TTL-based, auto-prunes
+- `recordPlayerInteraction(name)` / `getPlayerFamiliarity(name)` — saturates at 20 interactions → 1.0
+- `getLocationFamiliarity(pos, radius=15)` — 0–1, saturates at cumulative weight 10 nearby
+- `decay(factor=0.93)` — multiply all counters; remove below threshold (0.5 idle, 0.3 player); called every 60s in prune interval
+- `serialize()` / `restore(data)` — habits saved to PersistenceManager, restored on bot reconnect
+- Danger marks restore with future-expiry filter (stale marks dropped on restore)
+
+### Integration points
+- **FastBrain.habits** — public field; created in constructor; passed to `createDefaultExecutors()` deps
+- **Chat handler** → `habits.recordPlayerInteraction(username)` on every chat
+- **Prune interval** → `habits.decay()` every 60s alongside `arbitrator.pruneCompleted()`
+- **Zone update (10s)** → `habits.getLocationFamiliarity(pos)` → `humanization.setFamiliarity(level)`
+- **MinecraftBot.buildPersistedState** → `habits.serialize()` in save; `habits.restore()` on load
+
+### HumanizationSystem familiarity
+- `setFamiliarity(level)` — stores `familiarityLevel` (0–1)
+- `scheduleLookAround()` applies `famMult = familiarityLevel > 0.6 ? 1.5 : 1` — familiar areas scan less
+
+### Idle executor habit wiring
+- 30% chance before idle behaviors: drift to `getPreferredIdleSpot(pos, 20)` if known and > 2 blocks away
+- After idle behaviors: `recordIdlePosition(current pos)` — builds up preference over time
+
+### Explore executor habit wiring
+- Loop expanded to 8 attempts; each candidate checked against `isDangerousArea(x, z)` — avoids known danger zones
+- Fallback on attempt 7 takes last candidate regardless
+
+### PersistenceManager `PersistedState`
+- Added optional `habits?: { idleSpots, dangerMarks, players }` field — inline type matching `SerializedHabits`
+
 ## Environmental Awareness (Phase 4)
 
 ### ZoneClassifier (`bot/core/ZoneClassifier.ts`)

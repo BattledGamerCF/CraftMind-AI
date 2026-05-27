@@ -20,6 +20,7 @@ export class HumanizationSystem {
   private currentZone: ZoneType = "open";
   private alertness = 0; // 0–1: elevated alertness from recent world events
   private alertnessTimer: NodeJS.Timeout | null = null;
+  private familiarityLevel = 0; // 0–1: how well-known this area is (fewer scans when high)
   private lastLookTime = 0;
   private lastPosition = { x: 0, y: 0, z: 0 };
   private lastPositionTime = 0;
@@ -49,6 +50,11 @@ export class HumanizationSystem {
   }
 
   getAlertness(): number { return this.alertness; }
+
+  /** 0–1: familiar areas → less frequent scanning → more confident movement feel. */
+  setFamiliarity(level: number) {
+    this.familiarityLevel = Math.max(0, Math.min(1, level));
+  }
 
   start() {
     if (!this.enabled) return;
@@ -85,9 +91,12 @@ export class HumanizationSystem {
 
   private scheduleLookAround() {
     // Stressed bots look around more often (anxious); focused bots rarely break gaze
-    const multiplier = this.operationalState === "stressed" ? 0.5
+    const stateMult = this.operationalState === "stressed" ? 0.5
       : this.operationalState === "focused" ? 2.5
       : 1;
+    // Familiar areas → slower scan rate (confidence); unfamiliar → normal
+    const famMult = this.familiarityLevel > 0.6 ? 1.5 : 1;
+    const multiplier = stateMult * famMult;
     const delay = randomBetween(3000, 12000) * multiplier;
     this.lookTimer = setTimeout(() => {
       this.doLookAround().catch(() => {});

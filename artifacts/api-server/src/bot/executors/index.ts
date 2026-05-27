@@ -10,6 +10,7 @@ import type { SocialSystem } from "../systems/SocialSystem.js";
 import type { Perception } from "../core/Perception.js";
 import type { CraftingSystem } from "../systems/CraftingSystem.js";
 import type { PlaystyleWeights } from "../playstyle/PlaystyleProfile.js";
+import type { HabitStore } from "../core/HabitStore.js";
 import { getStructure } from "../structures/StructureRegistry.js";
 import { logger } from "../../lib/logger.js";
 
@@ -42,6 +43,7 @@ export interface ExecutorDeps {
   perception: Perception;
   crafting?: CraftingSystem;
   playstyle?: PlaystyleWeights;
+  habits?: HabitStore;
   setHome?: (pos: { x: number; y: number; z: number }) => void;
   getHome?: () => { x: number; y: number; z: number } | null;
 }
@@ -176,22 +178,21 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
           }
         }
 
-        // Pick a direction, prefer cells not recently visited; scale by playstyle
+        // Pick a direction, prefer cells not recently visited and not known-dangerous; scale by playstyle
         const rangeScale = deps.playstyle?.explorationRange ?? 1;
         const dist = (night ? 10 + Math.random() * 10 : 20 + Math.random() * 40) * rangeScale;
         let target = { x: pos.x, y: pos.y, z: pos.z };
-        for (let attempt = 0; attempt < 6; attempt++) {
+        for (let attempt = 0; attempt < 8; attempt++) {
           const angle = Math.random() * Math.PI * 2;
           const candidate = {
             x: pos.x + Math.cos(angle) * dist,
             y: pos.y,
             z: pos.z + Math.sin(angle) * dist,
           };
-          if (!isRecentlyExplored(candidate.x, candidate.z)) {
-            target = candidate;
-            break;
-          }
-          target = candidate; // fallback if all explored
+          const recentlyExplored = isRecentlyExplored(candidate.x, candidate.z);
+          const isDangerous = deps.habits?.isDangerousArea(candidate.x, candidate.z) ?? false;
+          if (!recentlyExplored && !isDangerous) { target = candidate; break; }
+          if (attempt === 7) target = candidate; // fallback: take last candidate regardless
         }
 
         markExplored(pos.x, pos.z);
@@ -273,6 +274,16 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
           return;
         }
 
+        // Habit: 30% chance to drift to a familiar idle spot when one is known nearby
+        if (!signal.aborted && deps.habits && Math.random() < 0.3) {
+          const pos = deps.bot.entity.position;
+          const preferred = deps.habits.getPreferredIdleSpot(pos, 20);
+          if (preferred && deps.movement.distanceTo(preferred) > 2) {
+            const detach = whenAborted(signal, () => deps.movement.stop());
+            try { await deps.movement.goto(preferred, 1); } catch { /* ok */ } finally { detach(); }
+          }
+        }
+
         // Subtle idle behaviors — pick one or two non-disruptive actions
         const behaviors: Array<() => Promise<void>> = [
           // Glance around
@@ -310,6 +321,11 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         for (const b of chosen) {
           if (signal.aborted) return;
           await b().catch(() => {});
+        }
+
+        // Habit: record current idle position for future preference learning
+        if (!signal.aborted && deps.habits) {
+          deps.habits.recordIdlePosition(deps.bot.entity.position);
         }
 
         // Spatial etiquette: step off important blocks (crops, containers, work surfaces, beds)
