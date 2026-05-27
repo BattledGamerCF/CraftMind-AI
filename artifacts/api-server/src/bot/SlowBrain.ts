@@ -34,6 +34,10 @@ export class SlowBrain {
   private lastProcessedTime = 0;
   private readonly minProcessInterval = 1500;
 
+  // Provider health tracking — suppress duplicate "offline" log spam
+  private consecutiveFailures = 0;
+  private providerDegradedLoggedAt = 0;
+
   constructor(llm: LLMProvider, mode: import("./types.js").CognitiveMode = "balanced") {
     this.llm = llm;
     this.mode = mode;
@@ -84,9 +88,28 @@ export class SlowBrain {
       const assistantMessage: LLMMessage = { role: "assistant", content: response };
       this.conversationHistory.push(assistantMessage);
 
+      this.consecutiveFailures = 0; // reset on success
       return this.parseIntent(response);
     } catch (err) {
-      logger.error({ err }, "SlowBrain processing error");
+      this.consecutiveFailures++;
+      const now = Date.now();
+
+      if (this.consecutiveFailures >= 3 && now - this.providerDegradedLoggedAt > 60_000) {
+        this.providerDegradedLoggedAt = now;
+        logger.warn(
+          {
+            provider: this.llm.providerName,
+            model: this.llm.modelName,
+            failures: this.consecutiveFailures,
+          },
+          "LLM provider appears offline or unresponsive. " +
+          "For Ollama: ensure `ollama serve` is running and the model is pulled (`ollama pull llama3.2`). " +
+          "For cloud providers: check API key and network access.",
+        );
+      } else {
+        logger.debug({ err, provider: this.llm.providerName }, "SlowBrain LLM call failed");
+      }
+
       return null;
     } finally {
       this.processing = false;

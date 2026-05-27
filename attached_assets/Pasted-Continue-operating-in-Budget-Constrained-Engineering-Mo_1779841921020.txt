@@ -1,0 +1,192 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Mode target: Economy.
+
+Implementation rules:
+- surgical edits only
+- minimal file reads
+- avoid broad rescans
+- preserve stable interfaces
+- prioritize usability and deployment readiness
+- avoid architecture rewrites unless stability requires them
+
+The project is now transitioning toward:
+Public Alpha Readiness.
+
+Primary objective:
+make the project practical for other users to install, configure, run, and extend without deep internal knowledge of the codebase.
+
+Focus on:
+- onboarding
+- configuration
+- stability
+- dependency management
+- sensible defaults
+- deployment ergonomics
+- operational clarity
+
+Do NOT build flashy new systems right now.
+
+1. Configuration System Cleanup
+
+Create a centralized configuration structure.
+
+Current goals:
+- single source of truth
+- environment variable support
+- sensible defaults
+- safe fallback behavior
+
+Configuration categories:
+- LLM providers
+- cognitive modes
+- playstyle defaults
+- movement settings
+- persistence settings
+- telemetry settings
+- API settings
+- safety limits
+
+Avoid scattered config constants across files.
+
+2. Dependency Validation
+
+Implement startup validation for:
+- missing env vars
+- unsupported provider configs
+- invalid model names
+- missing directories
+- incompatible runtime settings
+
+Errors should be:
+- human-readable
+- actionable
+- concise
+
+Do NOT allow cryptic startup failures.
+
+3. Safe Defaults
+
+Set practical defaults for new users:
+- balanced cognitive mode
+- auto playstyle
+- conservative risk behavior
+- moderate autonomy
+- telemetry enabled
+- lightweight persistence enabled
+
+Prevent unsafe or chaotic behavior out-of-the-box.
+
+4. Provider Fallback Handling
+
+Improve resilience:
+- provider unavailable
+- Ollama offline
+- API timeout
+- malformed LLM response
+- rate limits
+
+Fallback order:
+deterministic → lightweight local → configured remote provider
+
+The bot should degrade gracefully rather than failing catastrophically.
+
+5. GitHub Readiness
+
+Prepare the project for open-source usage:
+- clean README structure
+- setup instructions
+- environment variable documentation
+- provider setup examples
+- local Ollama setup guide
+- troubleshooting section
+- quickstart instructions
+- API examples
+
+Keep documentation practical and concise.
+
+Do NOT generate giant marketing prose.
+
+6. Installation Simplicity
+
+Reduce setup friction.
+
+Goals:
+- minimal required configuration
+- one-command startup where possible
+- automatic folder creation
+- default persistence directories
+- default configs generated automatically
+
+The project should “just run” for most users.
+
+7. Runtime Safety Limits
+
+Add configurable caps for:
+- memory growth
+- waypoint count
+- telemetry retention
+- retry loops
+- stuck recovery loops
+- concurrent tasks
+- autonomous wandering distance
+
+Prevent runaway behavior during long sessions.
+
+8. Logging Improvements
+
+Standardize logging:
+- concise formatting
+- log levels
+- subsystem tags
+- startup summaries
+- provider status
+- persistence status
+- current cognitive/playstyle mode
+
+Avoid noisy spam logs.
+
+9. Lightweight Plugin/Extension Preparation
+
+Do NOT build a plugin framework yet.
+
+But:
+- identify extension points
+- avoid hardcoded assumptions
+- keep planners/executors modular
+- maintain clean interfaces
+
+Prepare for future extensibility without major rewrites.
+
+10. User Experience Priorities
+
+Prioritize:
+- reliability
+- clarity
+- predictability
+- setup simplicity
+- graceful failure
+- practical defaults
+
+over:
+- feature explosion
+- complex AI behavior
+- experimental systems
+
+11. Cost Discipline
+
+Continue minimizing:
+- broad project scans
+- repeated full typechecks
+- architecture narration
+- speculative refactors
+- large autonomous edit passes
+
+Use:
+- local patches
+- focused validation
+- incremental cleanup
+- targeted improvements only
+
+The project is now entering:
+stable public-facing autonomous companion infrastructure phase.

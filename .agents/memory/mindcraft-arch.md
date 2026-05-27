@@ -121,6 +121,43 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Public Alpha Readiness (Phase 6)
+
+### `src/config.ts` — centralized config
+- Single export `config` — reads all env vars with defaults
+- `config.server`: nodeEnv, logLevel
+- `config.persistence`: dataDir (`MINDCRAFT_DATA_DIR` or `~/.mindcraft`), botsDir, enabled flag
+- `config.llm`: defaultProvider/model/ollamaBaseUrl (`OLLAMA_BASE_URL`), openaiApiKey, anthropicApiKey, requestTimeoutMs (`LLM_TIMEOUT_MS`)
+- `config.bots`: maxConcurrent (`MINDCRAFT_MAX_BOTS`=10), connectionTimeoutMs, defaultChatCooldownMs, defaultCognitiveMode, defaultPlaystyle
+- `config.safety`: maxWaypointsPerBot=50, maxEpisodicEventsPerBot=500, maxChatHistoryPerBot=200, maxHabitIdleSpotsPerBot=25, autonomousWanderMaxBlocks=200
+
+### `src/index.ts` — startup banner
+- Logs structured summary on listen: port, env, providers, maxBots, dataDir, persistence
+- Warns if no cloud keys: "No cloud API keys set — Ollama only"
+- Uses `process.exit(1)` with logger.error (not throw) for graceful failure messaging
+
+### `bot/llm/ProviderFactory.ts` — validation
+- openai: checks `config.apiKey ?? process.env["OPENAI_API_KEY"]`; throws actionable error if missing
+- anthropic: same pattern; throws actionable error if missing
+- default case: includes valid options list in error message
+- Provider factories now receive apiKey from env automatically when not in bot config
+
+### `bot/SlowBrain.ts` — degradation handling
+- `consecutiveFailures` counter + `providerDegradedLoggedAt` timestamp
+- After 3 failures: logs WARN with provider name, model, count, and remediation steps for Ollama vs cloud
+- 60s cooldown on the degraded log to suppress spam
+- Single failures log at DEBUG (not ERROR)
+- Success resets `consecutiveFailures` to 0
+
+### `README.md` — public quickstart
+- Quickstart: prerequisites, install, configure, start
+- Env var table with all variables, defaults, and descriptions
+- LLM provider setup for Ollama, OpenAI, Anthropic with example bot configs
+- API reference with curl examples for all endpoints
+- In-game command reference
+- Architecture diagram (text)
+- Troubleshooting: Ollama offline, missing API key, auth issues, persistence
+
 ## Behavioral Continuity & Habit Formation (Phase 5)
 
 ### HabitStore (`bot/core/HabitStore.ts`)
