@@ -126,7 +126,12 @@ export class SlowBrain {
         logger.debug({ err, provider: this.llm.providerName }, "SlowBrain LLM call failed");
       }
 
-      return this.keywordFallback(playerName, message);
+      const fallback = this.keywordFallback(playerName, message);
+      if (fallback) {
+        logger.info({ subsystems: "llm→keyword", intent: fallback.intent, provider: this.llm.providerName },
+          "[conflict] LLM failed — deterministic keyword fallback active");
+      }
+      return fallback;
     } finally {
       this.processing = false;
     }

@@ -121,6 +121,27 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Integration Hardening (Phase 9)
+
+### Audit outcome — all systems already compliant
+- Risk: only enqueues CRITICAL/HIGH safety-class tasks (combat, eat, hazard-escape, retreat). No non-safety enqueues. ✓
+- Playstyle: `resolve()` returns weights only; nothing in the hot path enqueues based on playstyle alone. ✓
+- Habit: `getPreferredIdleSpot()` returns Vec3|null suggestion; idle executor uses as a target hint, not a command. ✓
+- Queue eviction: already filtered to `priority === "LOW" || priority === "NORMAL"` only. ✓
+
+### Conflict detection tags (consistent across all fallback paths)
+- `[conflict] subsystems:"planner→idle"` — planner threw, safe idle returned
+- `[conflict] subsystems:"llm→keyword"` — LLM failed, keyword intent produced
+- `[conflict] subsystems:"queue→evict"` — queue at ceiling, LOW/NORMAL dropped
+- `[conflict] subsystems:"queue→drop"` — queue full of CRITICAL/HIGH, incoming tasks dropped
+- All are WARN (conflict) or INFO (keyword fallback) — never ERROR
+
+### Debug tick trace (`FastBrain`, gated on `config.debug.enabled`)
+- Emits single DEBUG log per perception cycle tagged `[tick]`
+- Fields: `zone`, `risk` (2dp), `state` (operationalState), `playstyle` (via `.getName()`), `task`, `taskPriority`
+- Zero cost in production (guarded by `config.debug.enabled` flag)
+- `PlaystyleProfile.getName()` is the correct accessor — `.profile` does not exist
+
 ## Stabilization & Packaging (Phase 8)
 
 ### `src/bot/presets.ts` — 4 exported bot presets

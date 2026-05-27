@@ -209,6 +209,18 @@ export class FastBrain {
         nearbyPlayerCount: Object.keys(this.bot.players).filter((n) => n !== this.bot.username).length,
         isNight,
       });
+      // Debug tick trace: single log per perception cycle
+      if (config.debug.enabled) {
+        logger.debug({
+          zone: this.zoneClassifier.getCached() ?? "unknown",
+          risk: Number(risk.value.toFixed(2)),
+          state: this.operationalState,
+          playstyle: this.playstyle.getName(),
+          task: current?.type ?? "idle",
+          taskPriority: current?.priority ?? null,
+        }, "[tick]");
+      }
+
       const alreadyEngaging = current?.type === "engage_hostile" || current?.type === "flee_threat";
 
       // Hostile within 8 blocks → engage or flee (risk-weighted)
@@ -443,7 +455,8 @@ export class FastBrain {
     try {
       tasks = this.planner.buildTasks(intent, ctx);
     } catch (planErr) {
-      logger.warn({ err: planErr, intent: intent.intent }, "Planner failed — falling back to idle");
+      logger.warn({ subsystems: "planner→idle", intent: intent.intent, err: planErr },
+        "[conflict] Planner threw — falling back to safe idle");
       return { planId: "planner_error", taskCount: 0 };
     }
     if (tasks.length === 0) return { planId: "noop", taskCount: 0 };
@@ -459,11 +472,14 @@ export class FastBrain {
     const queue = this.arbitrator.getQueue();
     const maxQ = config.safety.maxTasksInQueue;
     if (queue.length >= maxQ) {
-      logger.warn({ queueLength: queue.length, maxQ, intent: intent.intent }, "Task queue at ceiling — dropping lowest-priority pending tasks");
-      const toDrop = queue.filter((t) => t.priority === "LOW" || t.priority === "NORMAL").slice(0, tasks.length);
+      const evictable = queue.filter((t) => t.priority === "LOW" || t.priority === "NORMAL");
+      logger.warn({ subsystems: "queue→evict", queueLength: queue.length, maxQ, evictable: evictable.length, intent: intent.intent },
+        "[conflict] Task queue at ceiling — evicting LOW/NORMAL tasks");
+      const toDrop = evictable.slice(0, tasks.length);
       for (const t of toDrop) this.arbitrator.cancel(t.id);
       if (this.arbitrator.getQueue().length >= maxQ) {
-        logger.warn({ intent: intent.intent }, "Queue still full after eviction — dropping new tasks");
+        logger.warn({ subsystems: "queue→drop", intent: intent.intent },
+          "[conflict] Queue full after eviction (all CRITICAL/HIGH) — dropping incoming tasks");
         return { planId: "queue_full", taskCount: 0 };
       }
     }
