@@ -312,6 +312,26 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
           await b().catch(() => {});
         }
 
+        // Spatial etiquette: step off important blocks (crops, containers, work surfaces, beds)
+        if (!signal.aborted) {
+          try {
+            const blockBelow = deps.bot.blockAt(deps.bot.entity.position.offset(0, -1, 0));
+            if (blockBelow) {
+              const n = blockBelow.name;
+              const isImportant = n.endsWith("_bed") || n.includes("chest") || n === "barrel"
+                || n === "crafting_table" || n === "furnace" || n === "blast_furnace"
+                || n === "farmland" || n.endsWith("shulker_box") || n === "smoker";
+              if (isImportant) {
+                const pos = deps.bot.entity.position;
+                const angle = Math.random() * Math.PI * 2;
+                await deps.movement.goto(
+                  { x: pos.x + Math.cos(angle) * 2, y: pos.y, z: pos.z + Math.sin(angle) * 2 }, 1
+                ).catch(() => {});
+              }
+            }
+          } catch { /* chunk not loaded or invalid pos */ }
+        }
+
         // Natural pause
         await new Promise<void>((resolve) => {
           if (signal.aborted) { resolve(); return; }

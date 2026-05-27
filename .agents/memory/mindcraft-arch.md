@@ -121,6 +121,39 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Environmental Awareness (Phase 4)
+
+### ZoneClassifier (`bot/core/ZoneClassifier.ts`)
+- `ZoneType`: "home" | "storage" | "workshop" | "mine" | "farm" | "danger" | "open"
+- `classify(homePos?, dangerWaypoints?)` — cached 15s; call `invalidate()` after teleport
+- Priority order: home radius (18 blocks) → danger waypoint (12 blocks) → storage (chest/barrel within 7) → workshop (crafting/furnace/anvil within 5) → farm (farmland/crops within 9) → mine (y < 50 + skyLight = 0 ten blocks up) → open
+- Block matching uses `bot.findBlock({ matching: (b) => predicate(b.name) })` — no registry needed
+- Wire: `FastBrain` creates `ZoneClassifier`, runs `updateZone()` every 10s, pushes result to `HumanizationSystem.setZone()`
+
+### Explosion event handling (FastBrain)
+- `bot.on("explosion", ...)` is not in mineflayer's `BotEvents` typings — must cast: `(this.bot as unknown as { on(e: string, fn: ...): void }).on("explosion", ...)`
+- Within 30 blocks: `setAlertness(level, 30_000)` + `lookAtEvent(pos)` + episodic `world_event` record
+- alertLevel = `max(0.4, 1 - dist/30)`
+
+### HumanizationSystem zone + alertness
+- `setZone(zone)` — stored as `currentZone`; applied in `scheduleIdleBehavior()` as a multiplier
+  - storage/workshop: 1.8× idle delay; mine/danger: 3×; home: 0.8×
+- `setAlertness(level, durationMs)` — auto-decays on timer; takes max of existing vs new
+- `getAlertness()` — readable for external decisions
+- `alertness > 0.7` → idle suppressed; `alertness > 0.5` → look cooldown drops to 1500ms
+- `suppressMotion = zone === "storage" || zone === "workshop"` → smallStep/jump skipped
+- All alertness/zone timers cleared in `stop()`
+
+### Spatial etiquette (executors/index.ts — idle executor)
+- After idle behaviors run, checks `bot.blockAt(pos.offset(0, -1, 0))` (block below feet)
+- Important blocks: `*_bed`, `*chest*`, `barrel`, `crafting_table`, `furnace`, `blast_furnace`, `farmland`, `*shulker_box`, `smoker`
+- If standing on one: `movement.goto(pos + 2 blocks in random direction)` — wrapped in `.catch()`
+- Runs before the natural pause, only when not signal.aborted
+
+### EpisodicMemory additions
+- `recentCount(kind, windowMs)` — count events of kind in the window
+- `hasRecent(kind, windowMs)` — boolean any-match
+
 ## Behavioral Personality & Humanization Refinement
 
 ### PlaystyleProfile (`bot/playstyle/PlaystyleProfile.ts`)

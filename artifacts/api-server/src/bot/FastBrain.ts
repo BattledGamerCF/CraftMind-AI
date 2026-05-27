@@ -22,6 +22,7 @@ import { RiskAssessor } from "./systems/RiskAssessor.js";
 import { CraftingSystem } from "./systems/CraftingSystem.js";
 import { PlaystyleProfile, computeOperationalState } from "./playstyle/PlaystyleProfile.js";
 import type { PlaystyleName, OperationalState } from "./playstyle/PlaystyleProfile.js";
+import { ZoneClassifier } from "./core/ZoneClassifier.js";
 import { logger } from "../lib/logger.js";
 
 export interface FastBrainConfig {
@@ -68,6 +69,8 @@ export class FastBrain {
   private threatWatcherStop: (() => void) | null = null;
   private hazardWatcherStop: (() => void) | null = null;
   private pruneInterval: NodeJS.Timeout | null = null;
+  private zoneInterval: NodeJS.Timeout | null = null;
+  private zoneClassifier: ZoneClassifier;
   crafting: CraftingSystem;
   playstyle: PlaystyleProfile;
   operationalState: OperationalState = "relaxed";
@@ -86,6 +89,7 @@ export class FastBrain {
     this.social = new SocialSystem(bot, config.chatCooldown ?? 3000);
     this.crafting = new CraftingSystem(bot);
     this.playstyle = new PlaystyleProfile(config.playstyle ?? "auto");
+    this.zoneClassifier = new ZoneClassifier(bot);
 
     this.perception = new Perception(bot);
     this.memory = new MemoryStore();
@@ -139,6 +143,36 @@ export class FastBrain {
     this.hunger.start();
     this.humanization.start();
     this.perception.start(500);
+
+    // Initial zone classification then every 10 s
+    const updateZone = () => {
+      const home = this.memory.semantic.getHome()?.position;
+      const zone = this.zoneClassifier.classify(home);
+      this.humanization.setZone(zone);
+    };
+    updateZone();
+    this.zoneInterval = setInterval(updateZone, 10_000);
+
+    // Explosion events → alertness spike + episodic record
+    // "explosion" is emitted by mineflayer but not typed in BotEvents
+    (this.bot as unknown as { on(e: string, fn: (pos: unknown) => void): void })
+      .on("explosion", (position: unknown) => {
+      const ep = position as { x: number; y: number; z: number };
+      const pos = this.bot.entity.position;
+      const dx = pos.x - ep.x, dy = pos.y - ep.y, dz = pos.z - ep.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < 30) {
+        const alertLevel = Math.max(0.4, 1 - dist / 30);
+        this.humanization.setAlertness(alertLevel, 30_000);
+        this.humanization.lookAtEvent(ep).catch(() => {});
+        this.memory.episodic.record({
+          kind: "world_event",
+          description: `Explosion ${dist.toFixed(0)} blocks away`,
+          position: { x: ep.x, y: ep.y, z: ep.z },
+        });
+        logger.debug({ dist: dist.toFixed(1), alertLevel: alertLevel.toFixed(2) }, "Explosion detected — alertness raised");
+      }
+    });
 
     // Threat watcher — submits CRITICAL combat tasks when hostiles approach
     this.threatWatcherStop = this.perception.subscribe((snap) => {
@@ -436,10 +470,8 @@ export class FastBrain {
     this.hazardWatcherStop?.();
     this.threatWatcherStop = null;
     this.hazardWatcherStop = null;
-    if (this.pruneInterval) {
-      clearInterval(this.pruneInterval);
-      this.pruneInterval = null;
-    }
+    if (this.pruneInterval) { clearInterval(this.pruneInterval); this.pruneInterval = null; }
+    if (this.zoneInterval) { clearInterval(this.zoneInterval); this.zoneInterval = null; }
     this.perception.stop();
     this.humanization.stop();
     this.hunger.stop();

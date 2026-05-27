@@ -70,4 +70,16 @@ export class EpisodicMemory {
   count(): number {
     return this.events.length;
   }
+
+  /** Count events of a specific kind within the given time window. */
+  recentCount(kind: EpisodicEventKind, windowMs: number): number {
+    const since = Date.now() - windowMs;
+    return this.events.filter((e) => e.kind === kind && e.timestamp >= since).length;
+  }
+
+  /** True if any event of the given kind occurred within windowMs. */
+  hasRecent(kind: EpisodicEventKind, windowMs: number): boolean {
+    const since = Date.now() - windowMs;
+    return this.events.some((e) => e.kind === kind && e.timestamp >= since);
+  }
 }

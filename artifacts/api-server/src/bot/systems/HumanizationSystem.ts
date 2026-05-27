@@ -1,5 +1,6 @@
 import type { Bot } from "mineflayer";
 import type { OperationalState } from "../playstyle/PlaystyleProfile.js";
+import type { ZoneType } from "../core/ZoneClassifier.js";
 import { logger } from "../../lib/logger.js";
 
 function randomBetween(min: number, max: number): number {
@@ -16,9 +17,13 @@ export class HumanizationSystem {
   private lookTimer: NodeJS.Timeout | null = null;
   private enabled: boolean;
   private operationalState: OperationalState = "relaxed";
+  private currentZone: ZoneType = "open";
+  private alertness = 0; // 0–1: elevated alertness from recent world events
+  private alertnessTimer: NodeJS.Timeout | null = null;
   private lastLookTime = 0;
   private lastPosition = { x: 0, y: 0, z: 0 };
   private lastPositionTime = 0;
+  private lastEventReaction = 0; // rate-limit ambient event reactions
 
   constructor(bot: Bot, enabled = true) {
     this.bot = bot;
@@ -29,6 +34,22 @@ export class HumanizationSystem {
     this.operationalState = state;
   }
 
+  setZone(zone: ZoneType) {
+    this.currentZone = zone;
+  }
+
+  /** Temporarily raise alertness (0–1) for durationMs. Alertness decays on timer expiry. */
+  setAlertness(level: number, durationMs: number) {
+    this.alertness = Math.min(1, Math.max(this.alertness, level));
+    if (this.alertnessTimer) clearTimeout(this.alertnessTimer);
+    this.alertnessTimer = setTimeout(() => {
+      this.alertness = 0;
+      this.alertnessTimer = null;
+    }, durationMs);
+  }
+
+  getAlertness(): number { return this.alertness; }
+
   start() {
     if (!this.enabled) return;
     this.scheduleIdleBehavior();
@@ -38,14 +59,23 @@ export class HumanizationSystem {
   stop() {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
     if (this.lookTimer) { clearTimeout(this.lookTimer); this.lookTimer = null; }
+    if (this.alertnessTimer) { clearTimeout(this.alertnessTimer); this.alertnessTimer = null; }
   }
 
   private scheduleIdleBehavior() {
-    // Stressed/focused bots idle less often; curious bots idle more
-    const multiplier = this.operationalState === "stressed" ? 3
+    // Operational state multiplier
+    const stateMult = this.operationalState === "stressed" ? 3
       : this.operationalState === "focused" ? 2
       : this.operationalState === "curious" ? 0.7
       : 1;
+    // Zone multiplier: storage/workshop → less idle; home → slightly more; mine/danger → suppressed
+    const zoneMult = this.currentZone === "storage" || this.currentZone === "workshop" ? 1.8
+      : this.currentZone === "mine" || this.currentZone === "danger" ? 3
+      : this.currentZone === "home" ? 0.8
+      : 1;
+    // Alertness suppresses idle
+    const alertMult = this.alertness > 0.5 ? 2 : 1;
+    const multiplier = stateMult * zoneMult * alertMult;
     const delay = randomBetween(8000, 30000) * multiplier;
     this.idleTimer = setTimeout(() => {
       this.doIdleBehavior().catch(() => {});
@@ -67,14 +97,17 @@ export class HumanizationSystem {
 
   private async doIdleBehavior() {
     if (!this.enabled) return;
-    // Suppress all idle motion during stressed or focused states
+    // Suppress during stressed/focused state or high alertness
     if (this.operationalState === "stressed" || this.operationalState === "focused") return;
+    if (this.alertness > 0.7) return;
+    // Suppress movement in storage/workshop zones (avoid blocking containers)
+    const suppressMotion = this.currentZone === "storage" || this.currentZone === "workshop";
 
     const roll = Math.random();
     try {
-      if (roll < 0.25) {
+      if (!suppressMotion && roll < 0.25) {
         await this.smallStep();
-      } else if (roll < 0.35 && this.operationalState === "relaxed") {
+      } else if (!suppressMotion && roll < 0.35 && this.operationalState === "relaxed") {
         // Jump only when fully relaxed — not curious/focused/stressed
         await this.doJump();
       } else if (roll < 0.65) {
@@ -88,7 +121,10 @@ export class HumanizationSystem {
     if (!this.enabled) return;
     // Enforce minimum look cooldown to prevent look spam
     const now = Date.now();
-    const minCooldown = this.operationalState === "focused" ? 8000 : 4000;
+    // Alert bots scan more frequently (anxious); focused bots rarely look away
+    const minCooldown = this.operationalState === "focused" ? 8000
+      : this.alertness > 0.5 ? 1500
+      : 4000;
     if (now - this.lastLookTime < minCooldown) return;
     this.lastLookTime = now;
     try {
