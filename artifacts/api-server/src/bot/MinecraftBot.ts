@@ -8,6 +8,7 @@ import { sharedWorldModel, type BotRole } from "./core/SharedWorldModel.js";
 import { CognitiveRouter, IntentCache, CognitionTelemetry } from "./cognition/index.js";
 import { estimateProfileTokens } from "./cognition/PromptProfiles.js";
 import { TrustSystem } from "./social/TrustSystem.js";
+import { PersistenceManager } from "./PersistenceManager.js";
 import { logger } from "../lib/logger.js";
 
 const CONFIDENCE_CLARIFY_THRESHOLD = 0.4;
@@ -28,6 +29,8 @@ export class MinecraftBot {
   private maxReconnectAttempts = 5;
   private destroyed = false;
   private trust = new TrustSystem();
+  private persistence: PersistenceManager;
+  private autosaveInterval: NodeJS.Timeout | null = null;
 
   constructor(id: string, config: BotConfig, role: BotRole = "generalist") {
     this.id = id;
@@ -38,6 +41,7 @@ export class MinecraftBot {
     this.router = new CognitiveRouter();
     this.intentCache = new IntentCache();
     this.cognitionTelemetry = new CognitionTelemetry();
+    this.persistence = new PersistenceManager(id);
   }
 
   setMode(mode: CognitiveMode) {
@@ -78,6 +82,27 @@ export class MinecraftBot {
           await this.handleChat(username, message);
         });
         sharedWorldModel.registerBot({ id: this.id, username: this.config.username, role: this.role });
+
+        // Restore persisted state
+        const saved = await this.persistence.load();
+        if (saved) {
+          if (saved.home) this.fastBrain!.memory.semantic.setHome(saved.home);
+          if (saved.cognitiveMode) this.setMode(saved.cognitiveMode as Parameters<typeof this.setMode>[0]);
+          if (saved.semanticLocations) {
+            for (const loc of saved.semanticLocations) {
+              this.fastBrain!.memory.semantic.rememberLocation(
+                loc as Parameters<FastBrain["memory"]["semantic"]["rememberLocation"]>[0],
+              );
+            }
+          }
+          if (saved.trustPlayers) this.trust.restore(saved.trustPlayers);
+        }
+
+        // Autosave every 60 s
+        this.autosaveInterval = setInterval(() => {
+          this.persistence.scheduleSave(this.buildPersistedState());
+        }, 60_000);
+
         resolve();
       });
 
@@ -317,7 +342,34 @@ export class MinecraftBot {
     return this.role;
   }
 
+  private buildPersistedState() {
+    const semantic = this.fastBrain?.memory.semantic;
+    return {
+      version: 1 as const,
+      botId: this.id,
+      lastSeen: Date.now(),
+      home: semantic?.getHome()?.position,
+      cognitiveMode: this.slowBrain.getMode(),
+      currentGoal: this.fastBrain?.memory.shortTerm.currentGoal ?? null,
+      semanticLocations: semantic?.snapshot().locations.map((l) => ({
+        name: l.name,
+        position: l.position,
+        kind: l.kind,
+        description: l.description,
+      })),
+      trustPlayers: this.trust.snapshot().map((p) => ({
+        name: p.name,
+        level: p.level,
+        score: p.score,
+        interactions: p.interactions,
+        commandsIssued: p.commandsIssued,
+      })),
+    };
+  }
+
   destroy() {
+    if (this.autosaveInterval) { clearInterval(this.autosaveInterval); this.autosaveInterval = null; }
+    this.persistence.flush(this.buildPersistedState());
     this.destroyed = true;
     sharedWorldModel.unregisterBot(this.id);
     this.intentCache.clear();

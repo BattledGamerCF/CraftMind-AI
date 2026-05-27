@@ -42,6 +42,7 @@ const KEYWORD_RULES: Array<{ test: RegExp; intent: CanonicalIntent["intent"]; ta
   { test: /\b(go\s+home|return\s+home|head\s+home)\b/, intent: "return_home" },
   { test: /\bset\s+home\b/, intent: "set_home" },
   { test: /\b(clean\s*(up)?\s*(inventory)?|toss\s+junk|drop\s+junk)\b/, intent: "cleanup_inventory" },
+  { test: /\b(craft\s+tools?|make\s+tools?|build\s+tools?|craft\s+pickaxe|make\s+pickaxe)\b/, intent: "craft_tools" },
 ];
 
 interface RoutingContext {

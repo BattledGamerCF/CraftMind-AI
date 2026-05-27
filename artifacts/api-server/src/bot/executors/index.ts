@@ -8,8 +8,26 @@ import type { HungerSystem } from "../systems/HungerSystem.js";
 import type { InventorySystem } from "../systems/InventorySystem.js";
 import type { SocialSystem } from "../systems/SocialSystem.js";
 import type { Perception } from "../core/Perception.js";
+import type { CraftingSystem } from "../systems/CraftingSystem.js";
 import { getStructure } from "../structures/StructureRegistry.js";
 import { logger } from "../../lib/logger.js";
+
+// Explored-cell registry: prevents revisiting recently explored areas
+const exploredCells = new Map<string, number>(); // cellKey → expireAt
+const EXPLORE_CELL = 32; // blocks per grid cell
+const EXPLORE_TTL_MS = 10 * 60_000;
+function cellKey(x: number, z: number) {
+  return `${Math.floor(x / EXPLORE_CELL)},${Math.floor(z / EXPLORE_CELL)}`;
+}
+function markExplored(x: number, z: number) {
+  exploredCells.set(cellKey(x, z), Date.now() + EXPLORE_TTL_MS);
+  const now = Date.now();
+  for (const [k, exp] of exploredCells) if (now > exp) exploredCells.delete(k);
+}
+function isRecentlyExplored(x: number, z: number): boolean {
+  const exp = exploredCells.get(cellKey(x, z));
+  return !!exp && Date.now() < exp;
+}
 
 export interface ExecutorDeps {
   bot: Bot;
@@ -21,6 +39,7 @@ export interface ExecutorDeps {
   inventory: InventorySystem;
   social: SocialSystem;
   perception: Perception;
+  crafting?: CraftingSystem;
   setHome?: (pos: { x: number; y: number; z: number }) => void;
   getHome?: () => { x: number; y: number; z: number } | null;
 }
@@ -131,6 +150,12 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
     {
       type: "explore",
       async execute(_task, signal) {
+        // Skip if inventory is full — nothing to pick up anyway
+        if (deps.inventory.isFull()) {
+          logger.debug("explore: inventory full, skipping");
+          return;
+        }
+
         const pos = deps.bot.entity.position;
         const night = isNight(deps.bot);
 
@@ -149,13 +174,24 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
           }
         }
 
+        // Pick a direction, prefer cells not recently visited
         const dist = night ? 10 + Math.random() * 10 : 20 + Math.random() * 40;
-        const angle = Math.random() * Math.PI * 2;
-        const target = {
-          x: pos.x + Math.cos(angle) * dist,
-          y: pos.y,
-          z: pos.z + Math.sin(angle) * dist,
-        };
+        let target = { x: pos.x, y: pos.y, z: pos.z };
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const candidate = {
+            x: pos.x + Math.cos(angle) * dist,
+            y: pos.y,
+            z: pos.z + Math.sin(angle) * dist,
+          };
+          if (!isRecentlyExplored(candidate.x, candidate.z)) {
+            target = candidate;
+            break;
+          }
+          target = candidate; // fallback if all explored
+        }
+
+        markExplored(pos.x, pos.z);
         const detach = whenAborted(signal, () => deps.movement.stop());
         try {
           await deps.movement.gotoSafe(target, 3);
@@ -342,6 +378,26 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
         deps.setHome?.({ x: pos.x, y: pos.y, z: pos.z });
         logger.info({ x: pos.x, y: pos.y, z: pos.z }, "Home base set");
         await deps.social.say("Home base set here.").catch(() => {});
+      },
+    },
+    {
+      type: "craft_item",
+      async execute(task) {
+        if (!deps.crafting) return;
+        const item = task.target;
+        if (!item) return;
+        const count = (task.metadata["count"] as number | undefined) ?? 1;
+
+        // Special helpers for common patterns
+        if (item === "planks") {
+          await deps.crafting.craftPlanks(count);
+        } else if (item === "sticks") {
+          await deps.crafting.craftSticks(count);
+        } else if (item === "torches") {
+          await deps.crafting.craftTorches(count);
+        } else {
+          await deps.crafting.craftItem(item, count);
+        }
       },
     },
     {

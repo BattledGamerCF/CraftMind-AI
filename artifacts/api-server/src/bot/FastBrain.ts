@@ -19,6 +19,7 @@ import type { Task } from "./core/Task.js";
 import { registerDefaultPlans } from "./plans/index.js";
 import { createDefaultExecutors } from "./executors/index.js";
 import { RiskAssessor } from "./systems/RiskAssessor.js";
+import { CraftingSystem } from "./systems/CraftingSystem.js";
 import { logger } from "../lib/logger.js";
 
 export interface FastBrainConfig {
@@ -64,6 +65,7 @@ export class FastBrain {
   private threatWatcherStop: (() => void) | null = null;
   private hazardWatcherStop: (() => void) | null = null;
   private pruneInterval: NodeJS.Timeout | null = null;
+  crafting: CraftingSystem;
   private riskAssessor = new RiskAssessor();
   private readonly intentFailures = new Map<string, { count: number; cooledUntil: number }>();
 
@@ -77,6 +79,7 @@ export class FastBrain {
     this.building = new BuildingSystem(bot, this.humanization, this.movement, this.inventory);
     this.hunger = new HungerSystem(bot, config.autoEat ?? true);
     this.social = new SocialSystem(bot, config.chatCooldown ?? 3000);
+    this.crafting = new CraftingSystem(bot);
 
     this.perception = new Perception(bot);
     this.memory = new MemoryStore();
@@ -101,6 +104,7 @@ export class FastBrain {
       inventory: this.inventory,
       social: this.social,
       perception: this.perception,
+      crafting: this.crafting,
       setHome: (pos) => this.memory.semantic.setHome(pos),
       getHome: () => this.memory.semantic.getHome()?.position ?? null,
     });

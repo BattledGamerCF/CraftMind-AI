@@ -25,6 +25,20 @@ export class SemanticMemory {
     const full: NamedLocation = { ...loc, discoveredAt: Date.now() };
     this.locations.set(loc.name, full);
     if (loc.ownerName) this.ownership.set(loc.name, loc.ownerName);
+    // Cap at 100 locations — evict oldest (skip "home")
+    if (this.locations.size > 100) {
+      let oldest: NamedLocation | null = null;
+      for (const l of this.locations.values()) {
+        if (l.name === "home") continue;
+        if (!oldest || l.discoveredAt < oldest.discoveredAt) oldest = l;
+      }
+      if (oldest) { this.locations.delete(oldest.name); this.ownership.delete(oldest.name); }
+    }
+  }
+
+  /** Convenience wrapper for named waypoints (kind="landmark"). */
+  recordWaypoint(name: string, position: { x: number; y: number; z: number }, description?: string) {
+    this.rememberLocation({ name, position, kind: "landmark", description });
   }
 
   getLocation(name: string): NamedLocation | null {

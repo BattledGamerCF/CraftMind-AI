@@ -70,7 +70,8 @@ export interface LLMIntent {
     | "report_status"
     | "return_home"
     | "set_home"
-    | "cleanup_inventory";
+    | "cleanup_inventory"
+    | "craft_tools";
   target?: string;
   chat?: string;
   params?: Record<string, unknown>;

@@ -34,7 +34,8 @@ export type TaskType =
   | "equip_armor"
   | "return_home"
   | "set_home"
-  | "cleanup_inventory";
+  | "cleanup_inventory"
+  | "craft_item";
 
 export interface Task {
   id: string;

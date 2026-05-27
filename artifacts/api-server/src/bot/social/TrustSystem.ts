@@ -16,6 +16,14 @@ export class TrustSystem {
 
   private getOrCreate(name: string): PlayerTrust {
     if (!this.players.has(name)) {
+      // Cap at 50 players — evict lowest-scoring non-owner when over limit
+      if (this.players.size >= 50) {
+        let worst: PlayerTrust | null = null;
+        for (const p of this.players.values()) {
+          if (p.level !== "owner" && (!worst || p.score < worst.score)) worst = p;
+        }
+        if (worst) this.players.delete(worst.name);
+      }
       this.players.set(name, {
         name,
         level: "neutral",
@@ -28,6 +36,22 @@ export class TrustSystem {
       });
     }
     return this.players.get(name)!;
+  }
+
+  /** Restore trust records from persisted state. */
+  restore(players: Array<{ name: string; level: string; score: number; interactions: number; commandsIssued: number }>) {
+    for (const p of players) {
+      this.players.set(p.name, {
+        name: p.name,
+        level: p.level as TrustLevel,
+        score: p.score,
+        interactions: p.interactions,
+        helpfulEvents: 0,
+        hostileEvents: 0,
+        commandsIssued: p.commandsIssued,
+        lastSeen: Date.now(),
+      });
+    }
   }
 
   private computeLevel(score: number): TrustLevel {

@@ -79,6 +79,45 @@ const gatherFoodPlan: PlanBuilder = () => [
   }),
 ];
 
+const craftToolsPlan: PlanBuilder = () => {
+  const planksTask = createTask({
+    type: "craft_item",
+    target: "planks",
+    priority: "NORMAL",
+    timeoutMs: 20_000,
+    metadata: { count: 8 },
+    goal: "craft planks",
+  });
+  const sticksTask = createTask({
+    type: "craft_item",
+    target: "sticks",
+    priority: "NORMAL",
+    timeoutMs: 20_000,
+    metadata: { count: 8 },
+    prerequisites: [planksTask.id],
+    goal: "craft sticks",
+  });
+  const pickaxeTask = createTask({
+    type: "craft_item",
+    target: "wooden_pickaxe",
+    priority: "NORMAL",
+    timeoutMs: 20_000,
+    metadata: { count: 1 },
+    prerequisites: [sticksTask.id],
+    goal: "craft wooden pickaxe",
+  });
+  const swordTask = createTask({
+    type: "craft_item",
+    target: "wooden_sword",
+    priority: "NORMAL",
+    timeoutMs: 20_000,
+    metadata: { count: 1 },
+    prerequisites: [sticksTask.id],
+    goal: "craft wooden sword",
+  });
+  return [planksTask, sticksTask, pickaxeTask, swordTask];
+};
+
 const returnHomePlan: PlanBuilder = (_intent, ctx) => {
   const home = ctx.memory?.semantic.getHome();
   if (!home) {
@@ -154,6 +193,7 @@ export function registerDefaultPlans(planner: Planner) {
   planner.registerBuilder("idle", idlePlan);
   planner.registerBuilder("report_status", reportStatusPlan);
   planner.registerBuilder("defend_self", defendSelfPlan);
+  planner.registerBuilder("craft_tools", craftToolsPlan);
   planner.registerBuilder("return_home", returnHomePlan);
   planner.registerBuilder("set_home", setHomePlan);
   planner.registerBuilder("cleanup_inventory", cleanupInventoryPlan);

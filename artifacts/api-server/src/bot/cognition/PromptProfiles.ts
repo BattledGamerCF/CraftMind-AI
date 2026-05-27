@@ -16,7 +16,7 @@ export type PromptProfileKey =
   | "deep-reasoning";
 
 const INTENTS =
-  "idle|follow_player|mine_resource|build_structure|explore|come_here|stop|gather_food|report_status|defend_self|return_home|set_home|cleanup_inventory";
+  "idle|follow_player|mine_resource|build_structure|explore|come_here|stop|gather_food|report_status|defend_self|return_home|set_home|cleanup_inventory|craft_tools";
 
 const FORMAT = `Response format (JSON ONLY, no extra text):
 {"intent":"<intent>","target":"<optional>","chat":"<short message, max 12 words>","params":{}}`;

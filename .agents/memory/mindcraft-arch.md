@@ -91,6 +91,36 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 ### New REST endpoint
 - `GET /api/bots/:id/trust` — returns trust snapshot sorted by score
 
+## Phase 3+ additions (persistence, crafting, long-session stability)
+
+### PersistenceManager (`bot/PersistenceManager.ts`)
+- Saves JSON to `$HOME/.mindcraft/bots/{botId}.json` — survives process restarts
+- State: `{ version:1, home, cognitiveMode, currentGoal, semanticLocations[], trustPlayers[] }`
+- Wire: loaded on spawn (after fastBrain.setup), autosave every 60s via setInterval, flush on destroy
+- `scheduleSave(state, 5000)` debounces rapid updates; `flush()` writes immediately
+
+### CraftingSystem (`bot/systems/CraftingSystem.ts`)
+- Wraps mineflayer `bot.recipesFor` + `bot.craft` with `(bot as unknown)` casts (Registry type mismatch)
+- `craftItem(name, count)` — tries 2x2 first, falls back to nearby crafting table (4-block radius)
+- `craftPlanks()` — detects log type in inventory; `craftSticks()`, `craftTorches()` wrappers
+- Added to `ExecutorDeps.crafting` and wired through `FastBrain.crafting` → `createDefaultExecutors`
+
+### craft_item executor + craft_tools plan
+- `craft_item` TaskType + executor — dispatches to craftPlanks/craftSticks/craftTorches helpers or raw craftItem
+- `craft_tools` plan: [planks → sticks → wooden_pickaxe, wooden_sword] with prerequisite chaining by task ID
+- `craft_tools` intent registered in router (keyword: "craft tools/make tools/craft pickaxe"), PromptProfiles INTENTS, and plans
+
+### Explore dedup
+- Module-level `exploredCells: Map<cellKey, expireAt>` in executors/index.ts (32-block cells, 10min TTL)
+- `markExplored()` + self-pruning; explore executor tries 6 random angles, picks first unvisited
+- Also skips entire explore task if `inventory.isFull()`
+
+### Long-session stability caps
+- SemanticMemory: cap at 100 locations, evict oldest (home exempt)
+- SemanticMemory: `recordWaypoint(name, pos, desc)` helper alias for kind="landmark"
+- TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
+- TrustSystem: `restore(players[])` method for persistence reload
+
 ## Cognitive Economy Modes
 Controlled by `CognitiveMode` on `BotConfig` / `SlowBrain`. Switch at runtime via `PATCH /api/bots/:id/mode`.
 
