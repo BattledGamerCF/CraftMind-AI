@@ -338,6 +338,39 @@ Planner → Executors  ← movement, mining, building, combat, idle…
 
 ---
 
+## Known Limitations
+
+**Minecraft compatibility**
+- Java Edition only. Bedrock Edition is not supported (mineflayer limitation).
+- Tested against vanilla servers. Modded servers may have pathfinding or inventory edge cases.
+- Server must allow offline-mode auth, or the bot must use `"auth": "microsoft"` with a valid account.
+
+**Bot behavior**
+- Combat is melee-only. No ranged weapons, no bow usage.
+- Building is limited to built-in templates (`oak_cabin`, `simple_shelter`). Custom structures require code additions.
+- Pathfinding may stall in complex terrain (deep ravines, large water bodies). The bot retries automatically but may time out and return to idle.
+- The bot does not persist inventory knowledge across restarts.
+
+**LLM / language**
+- LLM output must produce valid JSON intent objects. Models smaller than ~3B parameters often produce malformed JSON; `llama3.2` (3B) is the tested minimum.
+- Keyword fallback covers only four commands (`follow`, `stop`, `mine`, `build`). Other commands are silently ignored when the LLM is offline.
+- The bot only responds when directly addressed (`BotName ...`, `! ...`, or `. ...`). Global chat is ignored.
+
+**Scaling**
+- Default cap is 10 concurrent bots per server process. Raising `MINDCRAFT_MAX_BOTS` works but increases RAM usage roughly linearly.
+- Each Ollama-backed bot shares the same model inference — concurrent bots will queue LLM requests.
+- No multi-server routing. Each bot connects to one server for its lifetime.
+
+**Persistence**
+- Local disk only (`~/.mindcraft/bots/`). No cloud sync or database backend.
+- Habit and episodic memory are lost if the data directory is deleted.
+
+**API**
+- No authentication on the REST API. Do not expose port 8080 to untrusted networks without a reverse proxy and auth layer.
+- No WebSocket or event streaming. Callers must poll `/runtime` or `/chat` for state changes.
+
+---
+
 ## Development
 
 ```bash
