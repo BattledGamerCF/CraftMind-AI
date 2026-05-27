@@ -121,6 +121,37 @@ SlowBrain is a consumer — it has no mode logic. It accepts `CognitiveDecision`
 - TrustSystem: cap at 50 players, evict lowest-scoring non-owner on overflow
 - TrustSystem: `restore(players[])` method for persistence reload
 
+## Production Hardening (Phase 7)
+
+### Debug mode (`config.debug.enabled` / `MINDCRAFT_DEBUG=true`)
+- HumanizationSystem: fixed delays instead of randomBetween (15s idle, 8s look)
+- HumanizationSystem: `doIdleBehavior()` returns immediately (no ambient noise)
+- Config reads once at startup — not re-read per tick; hot-reload is not supported
+
+### Planner failure fallback (`FastBrain.submitIntent`)
+- `planner.buildTasks()` wrapped in try/catch
+- On catch: logs WARN, returns `{ planId: "planner_error", taskCount: 0 }` (safe, no crash)
+
+### Risk score caching (`FastBrain`)
+- `private lastRiskScore = 0` — updated every perception tick after `riskAssessor.assess()`
+- `getLastRiskScore(): number` — public accessor for runtime endpoint
+- `getCurrentZone()` — thin accessor over private `zoneClassifier.getCached()`
+
+### LLM rate limiting (`SlowBrain`)
+- `callsThisMinute` + `minuteWindowStart` — sliding 60s window
+- Limit: `config.safety.llmMaxCallsPerMinute` (default 20, env `LLM_MAX_CALLS_PER_MINUTE`)
+- Over-limit: logs DEBUG, returns null (no LLM call made)
+
+### `GET /api/bots/:id/runtime`
+- Single-call snapshot: task, zone, operationalState, cognitiveMode, playstyle, riskScore, alertness, memory summary (goal/threatCount/episodicCount/recentEvents×5/waypointCount), telemetry stats
+- `mem.shortTerm.snapshot()` field is `nearbyThreats`, NOT `threats`
+
+### Startup health checks (`index.ts → runHealthChecks()`)
+- Runs async after listen — never blocks startup
+- Check 1: mkdir + access persistence.botsDir — logs INFO ✓ or WARN ✗
+- Check 2: GET `{ollamaUrl}/api/tags` with 3s AbortSignal.timeout — logs INFO ✓ or INFO ✗
+- Ollama offline is INFO (not WARN) — expected in cloud/API-key-only setups
+
 ## Public Alpha Readiness (Phase 6)
 
 ### `src/config.ts` — centralized config

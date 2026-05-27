@@ -1,0 +1,171 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Mode target: Economy.
+
+Engineering rules:
+- surgical, minimal edits only
+- avoid broad scans or refactors
+- preserve stable interfaces
+- prioritize usability, reproducibility, and debuggability
+- no new architecture layers unless required for stability
+- prefer configuration-driven extensibility over code expansion
+
+The project is now entering:
+Production Hardening Phase.
+
+Primary objective:
+make the system robust, predictable, and safe for real users running it in uncontrolled environments (local machines, servers, modpacks, etc).
+
+Focus is no longer capability expansion.
+
+Focus is:
+- stability
+- observability
+- reproducibility
+- controlled extensibility
+- failure transparency
+
+1. Deterministic Debug Mode
+
+Add a global debug flag in config:
+
+When enabled:
+- disable random humanization timing variance
+- log all task transitions clearly
+- log all planner decisions (compact)
+- log all LLM intents before execution
+- log arbitrator decisions (why tasks were accepted/rejected)
+- suppress ambient noise behaviors
+
+Goal:
+reproducible bot behavior for debugging.
+
+2. Structured Error Reporting
+
+Standardize all errors into a single format:
+
+- subsystem
+- error type
+- human-readable explanation
+- suggested fix
+- severity level
+
+Apply to:
+- provider failures
+- planner failures
+- executor failures
+- persistence failures
+- config failures
+
+Avoid raw stack traces as primary output.
+
+3. Startup Health Check System
+
+On boot, run a single consolidated health check:
+- config validity
+- provider availability
+- persistence directory access
+- model reachability (if possible)
+- core system initialization integrity
+
+Output should be:
+- concise summary
+- pass/fail per subsystem
+- no spam logs
+
+4. Plugin-Safe Boundaries (Lightweight)
+
+Do NOT build a plugin system.
+
+Instead:
+- clearly mark extension points in code
+- ensure executors are registry-driven
+- ensure planners are registry-driven
+- avoid hardcoded cross-system dependencies
+
+Goal:
+future extensibility without rewrites.
+
+5. Performance Guardrails
+
+Add lightweight protections:
+- max tasks per tick
+- max LLM calls per minute
+- max planner expansions per cycle
+- debounce repeated perception triggers
+- avoid redundant zone recalculation
+- prevent memory growth spikes
+
+These must be configurable.
+
+6. Observability Improvements
+
+Add compact runtime snapshot endpoint:
+
+GET /api/bots/:id/runtime
+
+Should return:
+- current task
+- current zone
+- cognitive mode
+- playstyle
+- risk score
+- active planner state
+- memory summary (compressed)
+- recent events (trimmed)
+- performance stats (basic)
+
+No verbose dumps.
+
+7. Controlled Randomization Lock
+
+Ensure all randomness sources:
+- are seedable (optional debug mode)
+- are bounded (no extreme variance)
+- respect safety constraints
+- do not affect core decision outcomes
+
+Humanization randomness must NEVER affect:
+- task correctness
+- pathfinding stability
+- combat decisions
+- persistence integrity
+
+8. Graceful Degradation Expansion
+
+Extend fallback behavior:
+- if LLM fails → deterministic intent parsing
+- if planner fails → executor-safe fallback actions
+- if persistence fails → in-memory mode with warning
+- if provider fails → auto-switch provider if available
+
+System must never fully crash due to one subsystem.
+
+9. Documentation Expansion (Practical Only)
+
+Extend README with:
+- debug mode usage
+- common failure scenarios
+- performance tuning knobs
+- environment variable reference (complete)
+- example configs (companion / worker / safe / adventurer)
+- troubleshooting flowchart (simple text)
+
+No marketing language.
+
+10. Cost Discipline (Strict)
+
+Continue enforcing:
+- no broad refactors
+- no speculative systems
+- no multi-file rewrites unless required for correctness
+- no repeated full codebase scans
+- no unnecessary abstraction layers
+
+Prefer:
+- incremental safety improvements
+- configuration-driven behavior
+- small targeted patches
+
+The system is now in:
+stable, production-adjacent autonomous agent runtime phase.

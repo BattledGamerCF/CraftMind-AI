@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import type { OperationalState } from "../playstyle/PlaystyleProfile.js";
 import type { ZoneType } from "../core/ZoneClassifier.js";
+import { config } from "../../config.js";
 import { logger } from "../../lib/logger.js";
 
 function randomBetween(min: number, max: number): number {
@@ -82,7 +83,8 @@ export class HumanizationSystem {
     // Alertness suppresses idle
     const alertMult = this.alertness > 0.5 ? 2 : 1;
     const multiplier = stateMult * zoneMult * alertMult;
-    const delay = randomBetween(8000, 30000) * multiplier;
+    // Debug mode: deterministic fixed delay (no variance) for reproducible behavior
+    const delay = config.debug.enabled ? 15000 * multiplier : randomBetween(8000, 30000) * multiplier;
     this.idleTimer = setTimeout(() => {
       this.doIdleBehavior().catch(() => {});
       this.scheduleIdleBehavior();
@@ -97,7 +99,7 @@ export class HumanizationSystem {
     // Familiar areas → slower scan rate (confidence); unfamiliar → normal
     const famMult = this.familiarityLevel > 0.6 ? 1.5 : 1;
     const multiplier = stateMult * famMult;
-    const delay = randomBetween(3000, 12000) * multiplier;
+    const delay = config.debug.enabled ? 8000 * multiplier : randomBetween(3000, 12000) * multiplier;
     this.lookTimer = setTimeout(() => {
       this.doLookAround().catch(() => {});
       this.scheduleLookAround();
@@ -106,6 +108,8 @@ export class HumanizationSystem {
 
   private async doIdleBehavior() {
     if (!this.enabled) return;
+    // Debug mode: suppress all ambient noise for reproducible behavior
+    if (config.debug.enabled) return;
     // Suppress during stressed/focused state or high alertness
     if (this.operationalState === "stressed" || this.operationalState === "focused") return;
     if (this.alertness > 0.7) return;

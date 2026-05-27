@@ -217,6 +217,43 @@ router.patch("/bots/:id/playstyle", (req, res) => {
   res.json({ ...bot.getPlaystyle(), operationalState: bot.getOperationalState() });
 });
 
+/**
+ * GET /api/bots/:id/runtime
+ * Compact single-call snapshot of everything relevant to bot state.
+ * Replaces the need to call /tasks + /memory + /perception + /playstyle separately.
+ */
+router.get("/bots/:id/runtime", (req, res) => {
+  const bot = botManager.getBot(req.params["id"]!);
+  if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
+  const fb = bot.fastBrain;
+  const mem = fb.memory;
+
+  res.json({
+    task: {
+      current: fb.arbitrator.getCurrent() ?? null,
+      queueLength: fb.arbitrator.getQueue().length,
+    },
+    zone: fb.getCurrentZone(),
+    operationalState: fb.operationalState,
+    cognitiveMode: bot.getMode(),
+    playstyle: bot.getPlaystyle(),
+    riskScore: Number(fb.getLastRiskScore().toFixed(3)),
+    alertness: Number(fb.humanization.getAlertness().toFixed(3)),
+    memory: {
+      goal: mem.shortTerm.currentGoal ?? null,
+      threatCount: mem.shortTerm.snapshot().nearbyThreats.length,
+      episodicEventCount: mem.episodic.count(),
+      recentEvents: mem.episodic.recent(5).map((e) => ({
+        kind: e.kind,
+        description: e.description,
+        minsAgo: Math.round((Date.now() - e.timestamp) / 60_000),
+      })),
+      waypointCount: mem.semantic.snapshot().locations.length,
+    },
+    telemetry: fb.telemetry.getStats(),
+  });
+});
+
 router.get("/swarm", (_req, res) => {
   res.json({ bots: sharedWorldModel.getBots() });
 });

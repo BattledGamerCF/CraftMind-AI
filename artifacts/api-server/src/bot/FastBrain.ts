@@ -76,6 +76,7 @@ export class FastBrain {
   crafting: CraftingSystem;
   playstyle: PlaystyleProfile;
   operationalState: OperationalState = "relaxed";
+  private lastRiskScore = 0;
   private riskAssessor = new RiskAssessor();
   private readonly intentFailures = new Map<string, { count: number; cooledUntil: number }>();
 
@@ -194,6 +195,7 @@ export class FastBrain {
       // Compute risk once per tick for all decisions below
       const tod = (this.bot as unknown as { time?: { timeOfDay?: number } }).time?.timeOfDay ?? 0;
       const risk = this.riskAssessor.assess(snap, this.inventory, tod);
+      this.lastRiskScore = risk.value;
 
       // Derive operational state and update playstyle auto-blend
       const current = this.arbitrator.getCurrent();
@@ -398,6 +400,12 @@ export class FastBrain {
     }
   }
 
+  /** Current environmental zone (cached from ZoneClassifier). */
+  getCurrentZone() { return this.zoneClassifier.getCached(); }
+
+  /** Last computed risk score (0–1); updated every perception tick. */
+  getLastRiskScore(): number { return this.lastRiskScore; }
+
   /**
    * Plan an intent and enqueue the resulting Task[] in the Arbitrator.
    * Returns the plan id and task count for caller visibility.
@@ -430,7 +438,13 @@ export class FastBrain {
       closestPlayer: this.social.getClosestPlayer(),
     };
 
-    const tasks = this.planner.buildTasks(intent, ctx);
+    let tasks: ReturnType<typeof this.planner.buildTasks>;
+    try {
+      tasks = this.planner.buildTasks(intent, ctx);
+    } catch (planErr) {
+      logger.warn({ err: planErr, intent: intent.intent }, "Planner failed — falling back to idle");
+      return { planId: "planner_error", taskCount: 0 };
+    }
     if (tasks.length === 0) return { planId: "noop", taskCount: 0 };
     const planId = tasks[0]?.planId ?? randomUUID();
 

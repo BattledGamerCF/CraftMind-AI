@@ -1,6 +1,7 @@
 import type { LLMProvider } from "./llm/LLMProvider.js";
 import type { CanonicalIntent, CognitiveDecision, LLMMessage } from "./types.js";
 import { getPromptProfile } from "./cognition/PromptProfiles.js";
+import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 
 const INTENTS_NEEDING_TARGET = new Set([
@@ -37,6 +38,9 @@ export class SlowBrain {
   // Provider health tracking — suppress duplicate "offline" log spam
   private consecutiveFailures = 0;
   private providerDegradedLoggedAt = 0;
+  // Rate limiting: cap LLM calls per minute
+  private callsThisMinute = 0;
+  private minuteWindowStart = Date.now();
 
   constructor(llm: LLMProvider, mode: import("./types.js").CognitiveMode = "balanced") {
     this.llm = llm;
@@ -61,6 +65,18 @@ export class SlowBrain {
     if (this.processing) return null;
     const now = Date.now();
     if (now - this.lastProcessedTime < this.minProcessInterval) return null;
+
+    // Per-minute rate limit
+    if (now - this.minuteWindowStart >= 60_000) {
+      this.callsThisMinute = 0;
+      this.minuteWindowStart = now;
+    }
+    const maxCalls = config.safety.llmMaxCallsPerMinute;
+    if (this.callsThisMinute >= maxCalls) {
+      logger.debug({ callsThisMinute: this.callsThisMinute, maxCalls }, "SlowBrain: LLM rate limit reached");
+      return null;
+    }
+    this.callsThisMinute++;
 
     this.processing = true;
     this.lastProcessedTime = now;

@@ -44,6 +44,12 @@ export const config = {
     maxHabitIdleSpotsPerBot: 25,
     autonomousWanderMaxBlocks: 200,
     maxRetryLoops: 5,
+    llmMaxCallsPerMinute: Number(process.env["LLM_MAX_CALLS_PER_MINUTE"] ?? "20"),
+  },
+
+  debug: {
+    /** Set MINDCRAFT_DEBUG=true for reproducible behavior: deterministic timers, verbose task logs */
+    enabled: process.env["MINDCRAFT_DEBUG"] === "true",
   },
 } as const;
 
