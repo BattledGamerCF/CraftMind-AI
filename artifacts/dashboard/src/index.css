@@ -753,3 +753,277 @@ button {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* ── Header nav (Bots / Logs tabs) ───────── */
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+
+.header-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.header-nav-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.header-nav-btn.active {
+  background: var(--surface2);
+  color: var(--accent);
+}
+
+/* ── Logs panel ──────────────────────────── */
+
+.logs-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.log-levels {
+  display: flex;
+  gap: 4px;
+}
+
+.log-level-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.log-level-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.log-level-btn.log-lvl-info.active  { border-color: #60a5fa; color: #60a5fa; }
+.log-level-btn.log-lvl-warn.active  { border-color: var(--warn); color: var(--warn); }
+.log-level-btn.log-lvl-error.active { border-color: var(--danger); color: var(--danger); }
+
+.log-search {
+  flex: 1;
+  min-width: 160px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.log-search:focus {
+  border-color: var(--accent);
+}
+
+.log-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.log-autorefresh {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.log-list {
+  flex: 1;
+  overflow-y: auto;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.log-empty {
+  padding: 32px 20px;
+  color: var(--text-dim);
+  text-align: center;
+  font-family: var(--font);
+}
+
+.log-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 14px;
+  border-bottom: 1px solid transparent;
+  transition: background 0.1s;
+}
+
+.log-entry:hover {
+  background: var(--surface);
+}
+
+.log-entry-warn  { background: rgba(251,191,36,0.04); }
+.log-entry-error,
+.log-entry-fatal { background: rgba(248,113,113,0.06); }
+
+.log-time {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  flex-shrink: 0;
+  min-width: 68px;
+}
+
+.log-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--surface2);
+  color: var(--text-muted);
+}
+
+.log-lvl-info  { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.log-lvl-warn  { background: rgba(251,191,36,0.15);  color: var(--warn); }
+.log-lvl-error { background: rgba(248,113,113,0.15); color: var(--danger); }
+.log-lvl-debug { background: var(--surface2); color: var(--text-dim); }
+.log-lvl-trace { background: var(--surface2); color: var(--text-dim); }
+
+.log-msg {
+  color: var(--text);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ── Welcome modal ───────────────────────── */
+
+.welcome-modal {
+  max-width: 480px;
+  width: 100%;
+}
+
+.welcome-header {
+  text-align: center;
+  padding: 8px 0 20px;
+}
+
+.welcome-icon {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.welcome-header h2 {
+  font-size: 20px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.welcome-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.welcome-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.welcome-step-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.welcome-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.welcome-step-body strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.welcome-step-body span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.welcome-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.welcome-log-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.welcome-log-hint code {
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}

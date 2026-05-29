@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { api, friendlyError, type BotStatus, type RuntimeData, type MetaData, type CreateBotPayload } from "./api";
+import { api, friendlyError, type BotStatus, type RuntimeData, type MetaData, type CreateBotPayload, type LogEntry } from "./api";
 
 const DEFAULT_MODELS: Record<string, string> = {
   ollama: "llama3.2",
@@ -619,6 +619,158 @@ function RuntimePanel({ runtime }: RuntimePanelProps) {
   );
 }
 
+// ── Welcome Modal (first-run) ─────────────────────────────────────────────────
+
+function WelcomeModal({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal welcome-modal">
+        <div className="welcome-header">
+          <span className="welcome-icon">⛏</span>
+          <h2>Welcome to Mindcraft</h2>
+          <p className="welcome-subtitle">AI companions for Minecraft</p>
+        </div>
+
+        <div className="welcome-steps">
+          <div className="welcome-step">
+            <div className="welcome-step-num">1</div>
+            <div className="welcome-step-body">
+              <strong>Start a Minecraft world</strong>
+              <span>Open Minecraft Java Edition. In singleplayer, pause and click <em>Open to LAN</em> → <em>Start LAN World</em>.</span>
+            </div>
+          </div>
+          <div className="welcome-step">
+            <div className="welcome-step-num">2</div>
+            <div className="welcome-step-body">
+              <strong>Connect a bot</strong>
+              <span>Click <strong>+ New Bot</strong> in the sidebar. Enter your server address and choose an AI provider. Ollama is free and runs locally.</span>
+            </div>
+          </div>
+          <div className="welcome-step">
+            <div className="welcome-step-num">3</div>
+            <div className="welcome-step-body">
+              <strong>Control your bot</strong>
+              <span>Select the bot from the list to see its status and send quick actions. Use the <strong>Logs</strong> tab to diagnose any issues.</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="welcome-footer">
+          <p className="welcome-log-hint">
+            Logs are stored in <code>~/.mindcraft/</code> and viewable in the <strong>Logs</strong> tab above.
+          </p>
+          <button className="btn btn-primary" onClick={onDismiss}>
+            Get Started →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Logs Panel ─────────────────────────────────────────────────────────────────
+
+const LOG_LEVEL_COLORS: Record<string, string> = {
+  trace: "log-lvl-trace",
+  debug: "log-lvl-debug",
+  info:  "log-lvl-info",
+  warn:  "log-lvl-warn",
+  error: "log-lvl-error",
+  fatal: "log-lvl-error",
+};
+
+function LogsPanel({
+  entries,
+  level,
+  onLevel,
+  search,
+  onSearch,
+  autoRefresh,
+  onAutoRefresh,
+  onRefresh,
+}: {
+  entries: LogEntry[];
+  level: string;
+  onLevel: (l: string) => void;
+  search: string;
+  onSearch: (s: string) => void;
+  autoRefresh: boolean;
+  onAutoRefresh: (v: boolean) => void;
+  onRefresh: () => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [entries]);
+
+  function handleScroll() {
+    const el = listRef.current;
+    if (!el) return;
+    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }
+
+  function fmt(ts: number) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  return (
+    <div className="logs-panel">
+      <div className="logs-toolbar">
+        <div className="log-levels">
+          {["all", "info", "warn", "error"].map((l) => (
+            <button
+              key={l}
+              className={`log-level-btn ${level === l ? "active" : ""} ${l !== "all" ? LOG_LEVEL_COLORS[l] ?? "" : ""}`}
+              onClick={() => onLevel(l)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <input
+          className="log-search"
+          placeholder="Search logs…"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+        />
+        <div className="log-toolbar-right">
+          <label className="log-autorefresh">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => onAutoRefresh(e.target.checked)}
+            />
+            Auto-refresh
+          </label>
+          <button className="btn btn-secondary btn-sm" onClick={onRefresh}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="log-list" ref={listRef} onScroll={handleScroll}>
+        {entries.length === 0 && (
+          <div className="log-empty">No log entries match the current filter.</div>
+        )}
+        {entries.map((e, i) => (
+          <div key={i} className={`log-entry log-entry-${e.level}`}>
+            <span className="log-time">{fmt(e.time)}</span>
+            <span className={`log-badge ${LOG_LEVEL_COLORS[e.level] ?? "log-lvl-info"}`}>
+              {e.level.toUpperCase()}
+            </span>
+            <span className="log-msg">{e.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -630,6 +782,16 @@ export default function App() {
   const [cmdError, setCmdError] = useState<string | null>(null);
   const [apiDown, setApiDown] = useState(false);
   const [polling, setPolling] = useState(true);
+
+  // Logs panel
+  const [showLogs, setShowLogs] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [logLevel, setLogLevel] = useState("all");
+  const [logSearch, setLogSearch] = useState("");
+  const [logAutoRefresh, setLogAutoRefresh] = useState(true);
+
+  // First-run welcome
+  const [welcomed, setWelcomed] = useState(() => !!localStorage.getItem("mindcraft_welcomed"));
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -686,6 +848,21 @@ export default function App() {
     return () => clearInterval(t);
   }, [selectedId, loadRuntime, polling]);
 
+  // Log polling
+  const loadLogs = useCallback(() => {
+    api.getLogs({ level: logLevel, search: logSearch, limit: 200 })
+      .then((r) => setLogEntries(r.entries))
+      .catch(() => {});
+  }, [logLevel, logSearch]);
+
+  useEffect(() => {
+    if (!showLogs) return;
+    loadLogs();
+    if (!logAutoRefresh) return;
+    const t = setInterval(loadLogs, 3000);
+    return () => clearInterval(t);
+  }, [showLogs, loadLogs, logAutoRefresh]);
+
   // Resume immediately when tab becomes active
   useEffect(() => {
     function onVisible() {
@@ -725,6 +902,20 @@ export default function App() {
         <span style={{ fontSize: 18 }}>⛏</span>
         <h1>Mindcraft</h1>
         <span className="subtitle">Bot Dashboard</span>
+        <nav className="header-nav">
+          <button
+            className={`header-nav-btn ${!showLogs ? "active" : ""}`}
+            onClick={() => setShowLogs(false)}
+          >
+            Bots
+          </button>
+          <button
+            className={`header-nav-btn ${showLogs ? "active" : ""}`}
+            onClick={() => setShowLogs(true)}
+          >
+            Logs
+          </button>
+        </nav>
         <span style={{ flex: 1 }} />
         {apiDown && <span className="api-down-badge">API offline</span>}
         <button
@@ -756,7 +947,7 @@ export default function App() {
             )}
             {apiDown && (
               <div className="sidebar-api-warn">
-                API server unreachable.<br />Run <code>./start-dev</code> to start it.
+                API server unreachable.<br />Run <code>Mindcraft.sh</code> / <code>Mindcraft.bat</code> to start.
               </div>
             )}
             {bots.map((bot) => (
@@ -790,7 +981,18 @@ export default function App() {
             </div>
           )}
 
-          {!selectedBot ? (
+          {showLogs ? (
+            <LogsPanel
+              entries={logEntries}
+              level={logLevel}
+              onLevel={setLogLevel}
+              search={logSearch}
+              onSearch={setLogSearch}
+              autoRefresh={logAutoRefresh}
+              onAutoRefresh={setLogAutoRefresh}
+              onRefresh={loadLogs}
+            />
+          ) : !selectedBot ? (
             <div className="empty-state">
               <span style={{ fontSize: 40 }}>⛏</span>
               <h3>Select a bot</h3>
@@ -847,6 +1049,15 @@ export default function App() {
           onCreated={async (bot) => {
             await loadBots();
             setSelectedId(bot.id);
+          }}
+        />
+      )}
+
+      {!welcomed && (
+        <WelcomeModal
+          onDismiss={() => {
+            localStorage.setItem("mindcraft_welcomed", "1");
+            setWelcomed(true);
           }}
         />
       )}

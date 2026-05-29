@@ -31,7 +31,7 @@ export function friendlyError(err: unknown, _context: string): string {
     msg.includes("502") ||
     msg.includes("503")
   ) {
-    return "Cannot reach the API server. Is it running? Try: ./start-dev";
+    return "Cannot reach the API server. Is it running? Start it with Mindcraft.bat (Windows) or Mindcraft.sh (Linux/macOS).";
   }
   if (msg.includes("ECONNREFUSED") || msg.includes("connect ECONNREFUSED")) {
     return "Bot couldn't connect to the Minecraft server. Check the host and port.";
@@ -172,4 +172,20 @@ export const api = {
     const q = baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : "";
     return apiFetch<{ models: string[]; error?: string }>(`/ollama/models${q}`);
   },
+
+  getLogs: (opts?: { level?: string; search?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.level && opts.level !== "all") params.set("level", opts.level);
+    if (opts?.search) params.set("search", opts.search);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return apiFetch<{ entries: LogEntry[] }>(`/logs${q}`);
+  },
 };
+
+export interface LogEntry {
+  level: string;
+  time: number;
+  msg: string;
+  [key: string]: unknown;
+}
