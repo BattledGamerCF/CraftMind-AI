@@ -388,7 +388,7 @@ Or use the **API Key** field in the dashboard.
 
 The dashboard can connect to any reachable Minecraft server: LAN, VPS, or public host.
 
-Enter the server's IP or hostname in the **Host** field. Use **Microsoft** auth mode for online-mode servers.
+Enter the server's IP or hostname in the **Host** field. The **Port** field is optional and defaults to `25565`. Use **Microsoft** auth mode for online-mode servers.
 
 ---
 

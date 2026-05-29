@@ -70,7 +70,7 @@ interface CreateModalProps {
 function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
   const [form, setForm] = useState({
     host: "localhost",
-    portRaw: "25565",
+    portRaw: "",
     username: "MindBot",
     version: meta?.latestTested ?? "",
     auth: "offline" as "offline" | "microsoft",
@@ -233,14 +233,14 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                 />
               </div>
               <div className="form-field">
-                <label>Port</label>
+                <label>Port <span className="label-optional">optional — defaults to 25565</span></label>
                 <input
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={form.portRaw}
                   onChange={(e) => { setPortErr(null); setField("portRaw", e.target.value); }}
                   onBlur={validatePort}
-                  placeholder="25565"
+                  placeholder=""
                 />
                 {portErr && <span className="field-error">{portErr}</span>}
               </div>
