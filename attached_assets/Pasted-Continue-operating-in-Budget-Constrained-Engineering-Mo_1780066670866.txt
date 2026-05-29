@@ -1,0 +1,113 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Mode target: Economy.
+
+Primary objective:
+build a minimal local web dashboard for Mindcraft that removes the need for direct CLI/API usage.
+
+Do NOT redesign backend architecture.
+
+Use the existing REST API surface.
+
+Scope:
+simple localhost dashboard only.
+
+1. Frontend Foundation
+
+Create a lightweight local web dashboard:
+- React + Vite if appropriate
+- minimal dependencies
+- localhost-only usage
+- no authentication system
+- no cloud features
+- no accounts/users
+
+2. Dashboard Features (Phase 1 only)
+
+Implement:
+
+A. Bot List View
+Display:
+- online/offline
+- username
+- host/server
+- current task
+- cognitive mode
+- playstyle
+- risk score
+
+B. Create Bot Form
+Fields:
+- host
+- port
+- username
+- Minecraft version
+- provider
+- cognitive mode
+- playstyle
+
+C. Runtime View
+Display:
+- current task
+- queue length
+- operational state
+- zone
+- memory summary
+- telemetry snapshot
+
+D. Quick Action Buttons
+Implement buttons for:
+- Follow
+- Stop
+- Return Home
+- Mine Wood
+- Build Shelter
+
+3. Minecraft Version Handling
+
+Add explicit Minecraft version support handling:
+
+- detect supported Mineflayer versions
+- expose version field in bot creation
+- validate unsupported versions cleanly
+- document tested versions in README
+
+Do NOT claim universal newest-version support unless verified.
+
+4. Backend Integration
+
+Use only existing REST endpoints where possible.
+
+Avoid backend rewrites.
+
+Only add endpoints if absolutely necessary for the dashboard.
+
+5. Simplicity Rules
+
+No:
+- Electron
+- auth systems
+- plugins
+- accounts
+- cloud sync
+- websockets unless already trivial
+- CSS frameworks unless already present
+
+Keep the dashboard lightweight and maintainable.
+
+6. README Update
+
+Add:
+- dashboard startup instructions
+- browser access URL
+- supported/tested Minecraft versions
+- local testing workflow
+
+Goal:
+a non-technical user should be able to:
+- start the server
+- open localhost dashboard
+- create a bot
+- control it visually
+
+without touching curl commands.

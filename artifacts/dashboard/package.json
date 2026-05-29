@@ -1,0 +1,23 @@
+{
+  "name": "@workspace/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.ts --host 0.0.0.0",
+    "build": "vite build --config vite.config.ts",
+    "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "lucide-react": "^0.511.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "~5.9.3",
+    "vite": "^6.3.5"
+  }
+}

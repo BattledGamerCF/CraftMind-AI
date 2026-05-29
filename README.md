@@ -316,6 +316,59 @@ Planner → Executors  ← movement, mining, building, combat, idle…
 
 ---
 
+## Dashboard
+
+A local web UI for creating and controlling bots without using curl.
+
+### Start
+
+```bash
+# Terminal 1 — API server
+./start-dev
+
+# Terminal 2 — dashboard (Linux/macOS)
+PORT=3001 BASE_PATH=/dashboard/ pnpm --filter @workspace/dashboard run dev
+
+# Windows Terminal 2
+set PORT=3001 && set BASE_PATH=/dashboard/ && pnpm --filter @workspace/dashboard run dev
+```
+
+Open **http://localhost:3001/dashboard/** in your browser.
+
+### Features
+
+- **Bot list** — see all connected bots, their state, current task, and zone
+- **New Bot form** — connect a bot with provider, model, cognitive mode, and playstyle dropdowns
+- **Runtime panel** — live task queue, risk score, alertness, memory summary, telemetry
+- **Quick actions** — Follow, Stop, Mine Wood, Build Shelter, Return Home, Report Status
+- **Auto-polling** — bot list refreshes every 3 s; runtime refreshes every 2 s
+
+---
+
+## Minecraft Version Support
+
+Tested against mineflayer's supported range. Versions confirmed working:
+
+| Version | Status |
+|---|---|
+| 1.20.4 | ✓ Tested (recommended) |
+| 1.20.1 | ✓ Tested |
+| 1.19.4 | ✓ Tested |
+| 1.18.2 | ✓ Tested |
+| 1.16.5 | ✓ Tested |
+| 1.21.x | Not tested — may work |
+| Bedrock | Not supported (mineflayer limitation) |
+
+Pass the version explicitly when connecting:
+
+```json
+{ "version": "1.20.4" }
+```
+
+Leave the `version` field blank to let mineflayer auto-detect from the server handshake. Auto-detect works on most vanilla servers.
+
+---
+
 ## Local Minecraft Testing
 
 A minimal end-to-end test from a clean clone.
