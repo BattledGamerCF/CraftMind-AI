@@ -534,12 +534,32 @@ button {
   50% { opacity: 1; }
 }
 
-/* ── Field error ─────────────────────────── */
+/* ── Field error / warn ──────────────────── */
 
 .field-error {
   color: var(--danger);
   font-size: 11px;
   margin-top: 2px;
+}
+
+.field-warn {
+  color: var(--warn);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* ── Model loading state ─────────────────── */
+
+.model-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 /* ── Optional label hint ─────────────────── */

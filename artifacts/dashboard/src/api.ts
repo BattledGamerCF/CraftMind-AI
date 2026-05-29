@@ -128,7 +128,7 @@ export interface CreateBotPayload {
   username: string;
   version?: string;
   auth: "offline" | "microsoft";
-  llm: { provider: string; model: string; baseUrl?: string };
+  llm: { provider: string; model: string; baseUrl?: string; apiKey?: string };
   behavior?: {
     humanize?: boolean;
     autoEat?: boolean;
@@ -167,4 +167,9 @@ export const api = {
     }),
 
   getMeta: () => apiFetch<MetaData>("/meta"),
+
+  getOllamaModels: (baseUrl?: string) => {
+    const q = baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : "";
+    return apiFetch<{ models: string[]; error?: string }>(`/ollama/models${q}`);
+  },
 };

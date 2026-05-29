@@ -7,6 +7,22 @@ const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-3-haiku-20240307",
 };
 
+const COGNITIVE_LABELS: Record<string, string> = {
+  deterministic:   "Deterministic — rule-based only, no LLM",
+  lightweight:     "Lightweight — fast, minimal reasoning",
+  balanced:        "Balanced — recommended",
+  auto:            "Auto — adapts to situation",
+  "deep-reasoning":"Deep Reasoning — slowest, most capable",
+};
+
+const PLAYSTYLE_LABELS: Record<string, string> = {
+  companion:  "Companion — follows and assists the player",
+  worker:     "Worker — focused on assigned tasks",
+  adventurer: "Adventurer — explores and acts freely",
+  safe:       "Safe — avoids combat and high-risk actions",
+  auto:       "Auto — adapts dynamically to context",
+};
+
 // ── Connection / State badge ──────────────────────────────────────────────────
 
 function ConnectionBadge({ bot }: { bot: BotStatus }) {
@@ -61,6 +77,7 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
     provider: "ollama",
     model: "llama3.2",
     ollamaUrl: "",
+    apiKey: "",
     cognitiveMode: "balanced",
     playstyle: "companion",
   });
@@ -69,6 +86,11 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
   const [err, setErr] = useState<string | null>(null);
   const versionAutoSet = useRef(false);
 
+  // Ollama model discovery
+  const [ollamaModels, setOllamaModels] = useState<string[] | null>(null);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
+  const [ollamaModelsErr, setOllamaModelsErr] = useState<string | null>(null);
+
   useEffect(() => {
     if (meta?.latestTested && !versionAutoSet.current) {
       versionAutoSet.current = true;
@@ -76,11 +98,49 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
     }
   }, [meta?.latestTested]);
 
+  // Fetch installed Ollama models via API proxy when provider=ollama or URL changes
+  useEffect(() => {
+    if (form.provider !== "ollama") {
+      setOllamaModels(null);
+      setOllamaModelsErr(null);
+      return;
+    }
+    let cancelled = false;
+    setOllamaModelsLoading(true);
+    setOllamaModels(null);
+    setOllamaModelsErr(null);
+
+    api.getOllamaModels(form.ollamaUrl || undefined)
+      .then((data) => {
+        if (cancelled) return;
+        setOllamaModels(data.models);
+        if (data.error) setOllamaModelsErr(data.error);
+        // Auto-select first model if current one isn't installed
+        if (data.models.length > 0) {
+          setForm((f) => ({
+            ...f,
+            model: data.models.includes(f.model) ? f.model : data.models[0]!,
+          }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOllamaModels([]);
+          setOllamaModelsErr("Cannot reach Ollama. Is it running? (ollama serve)");
+        }
+      })
+      .finally(() => { if (!cancelled) setOllamaModelsLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [form.provider, form.ollamaUrl]);
+
   function setField<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => {
       const next = { ...f, [k]: v };
       if (k === "provider") {
+        // Reset model to default for that provider (Ollama may override via discovery)
         next.model = DEFAULT_MODELS[v as string] ?? "";
+        next.apiKey = "";
       }
       return next;
     });
@@ -106,24 +166,21 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
       setPortErr("Port must be 1–65535");
       return;
     }
-    if (!form.host.trim()) {
-      setErr("Server host is required.");
-      return;
-    }
+    if (!form.host.trim()) { setErr("Server host is required."); return; }
     setBusy(true);
     try {
+      const llm: CreateBotPayload["llm"] = {
+        provider: form.provider,
+        model: form.model.trim(),
+        ...(form.provider === "ollama" && form.ollamaUrl ? { baseUrl: form.ollamaUrl } : {}),
+        ...(form.provider !== "ollama" && form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
+      };
       const payload: CreateBotPayload = {
         host: form.host.trim(),
         port,
         username: form.username.trim(),
         auth: form.auth,
-        llm: {
-          provider: form.provider,
-          model: form.model.trim(),
-          ...(form.provider === "ollama" && form.ollamaUrl
-            ? { baseUrl: form.ollamaUrl }
-            : {}),
-        },
+        llm,
         cognitiveMode: form.cognitiveMode,
         playstyle: form.playstyle,
         ...(form.version ? { version: form.version } : {}),
@@ -137,6 +194,10 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
       setBusy(false);
     }
   }
+
+  const isOllama = form.provider === "ollama";
+  const allModes = meta?.cognitiveModes ?? ["deterministic", "lightweight", "balanced", "auto", "deep-reasoning"];
+  const allPlaystyles = meta?.playstyles ?? ["companion", "worker", "adventurer", "safe", "auto"];
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -155,6 +216,7 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
 
         <form onSubmit={submit}>
           <div className="form-grid">
+            {/* ── Server ── */}
             <div className="form-section-title" style={{ marginTop: 0, borderTop: "none", paddingTop: 0 }}>
               Minecraft Server
             </div>
@@ -211,10 +273,7 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                 Minecraft Version
                 <span className="label-optional">optional — auto-detect if blank</span>
               </label>
-              <select
-                value={form.version}
-                onChange={(e) => setField("version", e.target.value)}
-              >
+              <select value={form.version} onChange={(e) => setField("version", e.target.value)}>
                 <option value="">Auto-detect</option>
                 {(meta?.testedVersions ?? []).map((v) => (
                   <option key={v} value={v}>
@@ -224,32 +283,20 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
               </select>
             </div>
 
+            {/* ── LLM Provider ── */}
             <div className="form-section-title">LLM Provider</div>
 
-            <div className="form-row">
-              <div className="form-field">
-                <label>Provider</label>
-                <select
-                  value={form.provider}
-                  onChange={(e) => setField("provider", e.target.value)}
-                >
-                  {(meta?.providers ?? ["ollama", "openai", "anthropic"]).map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Model</label>
-                <input
-                  required
-                  value={form.model}
-                  onChange={(e) => setField("model", e.target.value)}
-                  placeholder={DEFAULT_MODELS[form.provider] ?? "model name"}
-                />
-              </div>
+            <div className="form-field">
+              <label>Provider</label>
+              <select value={form.provider} onChange={(e) => setField("provider", e.target.value)}>
+                <option value="ollama">Ollama — local, free, private</option>
+                <option value="openai">OpenAI — cloud, requires API key</option>
+                <option value="anthropic">Anthropic — cloud, requires API key</option>
+              </select>
             </div>
 
-            {form.provider === "ollama" && (
+            {/* Ollama URL + model discovery */}
+            {isOllama && (
               <div className="form-field">
                 <label>
                   Ollama URL
@@ -263,38 +310,97 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
               </div>
             )}
 
-            {(form.provider === "openai" || form.provider === "anthropic") && (
-              <div className="info-banner">
-                Requires <code>{form.provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"}</code>{" "}
-                set as an environment variable on the API server.
+            {/* Model — dropdown for Ollama (with auto-discover), text input for cloud */}
+            <div className="form-field">
+              <label>Model</label>
+              {isOllama ? (
+                ollamaModelsLoading ? (
+                  <div className="model-loading">
+                    <span className="loading-dot" />
+                    Fetching installed models…
+                  </div>
+                ) : ollamaModels && ollamaModels.length > 0 ? (
+                  <select
+                    value={form.model}
+                    onChange={(e) => setField("model", e.target.value)}
+                  >
+                    {ollamaModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <input
+                      required
+                      value={form.model}
+                      onChange={(e) => setField("model", e.target.value)}
+                      placeholder="llama3.2"
+                    />
+                    {ollamaModelsErr && (
+                      <span className="field-warn">{ollamaModelsErr}</span>
+                    )}
+                  </>
+                )
+              ) : (
+                <input
+                  required
+                  value={form.model}
+                  onChange={(e) => setField("model", e.target.value)}
+                  placeholder={DEFAULT_MODELS[form.provider] ?? "model name"}
+                />
+              )}
+            </div>
+
+            {/* API key field for cloud providers */}
+            {!isOllama && (
+              <div className="form-field">
+                <label>
+                  API Key
+                  <span className="label-optional">overrides server env var if set</span>
+                </label>
+                <input
+                  type="password"
+                  value={form.apiKey}
+                  onChange={(e) => setField("apiKey", e.target.value)}
+                  placeholder={
+                    form.provider === "openai"
+                      ? "sk-… (or leave blank to use OPENAI_API_KEY env var)"
+                      : "sk-ant-… (or leave blank to use ANTHROPIC_API_KEY env var)"
+                  }
+                  autoComplete="new-password"
+                />
               </div>
             )}
 
+            {/* ── Behaviour ── */}
             <div className="form-section-title">Behaviour</div>
 
-            <div className="form-row">
-              <div className="form-field">
-                <label>Cognitive Mode</label>
-                <select
-                  value={form.cognitiveMode}
-                  onChange={(e) => setField("cognitiveMode", e.target.value)}
-                >
-                  {(meta?.cognitiveModes ?? ["balanced"]).map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Playstyle</label>
-                <select
-                  value={form.playstyle}
-                  onChange={(e) => setField("playstyle", e.target.value)}
-                >
-                  {(meta?.playstyles ?? ["companion"]).map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="form-field">
+              <label>Cognitive Mode</label>
+              <select
+                value={form.cognitiveMode}
+                onChange={(e) => setField("cognitiveMode", e.target.value)}
+              >
+                {allModes.map((m) => (
+                  <option key={m} value={m}>
+                    {COGNITIVE_LABELS[m] ?? m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label>Playstyle</label>
+              <select
+                value={form.playstyle}
+                onChange={(e) => setField("playstyle", e.target.value)}
+              >
+                {allPlaystyles.map((p) => (
+                  <option key={p} value={p}>
+                    {PLAYSTYLE_LABELS[p] ?? p}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
