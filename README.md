@@ -337,11 +337,60 @@ Open **http://localhost:3001/dashboard/** in your browser.
 
 ### Features
 
-- **Bot list** — see all connected bots, their state, current task, and zone
-- **New Bot form** — connect a bot with provider, model, cognitive mode, and playstyle dropdowns
-- **Runtime panel** — live task queue, risk score, alertness, memory summary, telemetry
-- **Quick actions** — Follow, Stop, Mine Wood, Build Shelter, Return Home, Report Status
-- **Auto-polling** — bot list refreshes every 3 s; runtime refreshes every 2 s; pauses automatically when the tab is hidden
+- **Bot list** — see all connected bots with connection state (online, offline, connecting, failed), current task, and zone
+- **New Bot form** — provider, model, cognitive mode, and playstyle dropdowns with descriptive labels
+  - **Ollama** — auto-detects installed models from `localhost:11434` (or a custom URL)
+  - **OpenAI / Anthropic** — secure API key field in the form; also works via server env var
+  - **Minecraft Version** — auto-selects the latest tested version; supports any reachable server
+- **Runtime panel** — current task, goal, state, risk score, queue length, alertness; telemetry is collapsible
+- **Quick actions** — Follow, Stop, Mine Wood, Build Shelter, Return Home, Report Status, Reconnect, Disconnect
+- **Auto-polling** — bot list refreshes every 3 s; runtime refreshes every 2 s; pauses when the tab is hidden
+
+---
+
+### Provider Setup
+
+**Ollama (local, free, private)**
+
+1. Start Ollama: `ollama serve`
+2. Pull a model: `ollama pull llama3.2`
+3. In the dashboard, the **Model** dropdown will auto-populate with installed models.
+
+If Ollama runs on a different machine, enter the full URL in the **Ollama URL** field.
+
+---
+
+**OpenAI (cloud, billed)**
+
+Set the key as an environment variable **before** starting the server:
+
+```bash
+export OPENAI_API_KEY=sk-...
+./start-dev
+```
+
+Or paste it directly into the **API Key** field in the dashboard — it will be sent securely in the create request.
+
+---
+
+**Anthropic (cloud, billed)**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+./start-dev
+```
+
+Or use the **API Key** field in the dashboard.
+
+---
+
+### Connecting to External Servers
+
+The dashboard can connect to any reachable Minecraft server: LAN, VPS, or public host.
+
+Enter the server's IP or hostname in the **Host** field. Use **Microsoft** auth mode for online-mode servers.
+
+---
 
 ### Troubleshooting
 
@@ -359,43 +408,25 @@ Wait a few seconds, then the dashboard will reconnect automatically.
 
 **Bot won't connect / "couldn't connect to Minecraft server"**
 
-- Confirm the Minecraft server is running and reachable from the machine running the API server.
-- Check the host and port (default: `localhost:25565`).
-- If the server is online-mode, set **Auth Mode → Microsoft** and ensure the bot account has a valid Microsoft login.
+- Confirm the server is running and reachable from the machine running the API server.
+- Check the **Host** and **Port** (default: `25565`).
+- For online-mode servers, use **Auth Mode → Microsoft** with a valid Microsoft account.
 
 ---
 
 **"Unsupported Minecraft version"**
 
-The bot couldn't handshake with the server. Try:
-
 1. Select the exact server version from the **Minecraft Version** dropdown.
 2. Or select **Auto-detect** — mineflayer will read the version from the server handshake.
-3. If the server runs a version not in the tested list (e.g. 1.21.x), it may still work on Auto-detect.
+3. Untested versions (e.g. 1.21.x) may still work on Auto-detect.
 
 ---
 
-**Ollama not running / "LLM provider error"**
+**Ollama model list doesn't load / "Cannot reach Ollama"**
 
-- Start Ollama: `ollama serve`
-- Pull the model if you haven't: `ollama pull llama3.2`
-- The dashboard will use `http://localhost:11434` by default. If Ollama runs elsewhere, set the **Ollama URL** field.
-
----
-
-**OpenAI or Anthropic "authentication failed"**
-
-Set the key as an environment variable before starting the API server:
-
-```bash
-export OPENAI_API_KEY=sk-...
-./start-dev
-```
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-./start-dev
-```
+- Ollama is not running: `ollama serve`
+- If Ollama is on a different machine, set the correct **Ollama URL**.
+- The dashboard contacts Ollama through the API server, so both must be on the same machine (or Ollama must be reachable from the API server).
 
 ---
 
