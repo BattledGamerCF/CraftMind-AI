@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Load .env if present
+if [ -f .env ]; then
+  set -o allexport
+  # shellcheck disable=SC1091
+  source .env
+  set +o allexport
+fi
+
+export PORT="${PORT:-8080}"
+export NODE_ENV="${NODE_ENV:-development}"
+
+echo "Starting Mindcraft (dev) on port ${PORT}…"
+pnpm --filter @workspace/api-server run dev

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Load .env if present
+if [ -f .env ]; then
+  set -o allexport
+  # shellcheck disable=SC1091
+  source .env
+  set +o allexport
+fi
+
+export PORT="${PORT:-8080}"
+export NODE_ENV="production"
+
+echo "Building Mindcraft…"
+pnpm --filter @workspace/api-server run build
+
+echo "Starting Mindcraft (prod) on port ${PORT}…"
+node --enable-source-maps artifacts/api-server/dist/index.mjs

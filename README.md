@@ -106,6 +106,13 @@ PORT=8080
 ### Start
 
 ```bash
+# Linux / macOS — one-liner launch (loads .env automatically)
+./start-dev
+
+# Windows
+start-dev.bat
+
+# Or directly with pnpm
 pnpm --filter @workspace/api-server run dev
 ```
 
@@ -309,6 +316,79 @@ Planner → Executors  ← movement, mining, building, combat, idle…
 
 ---
 
+## Local Minecraft Testing
+
+A minimal end-to-end test from a clean clone.
+
+### 1 — Start a Minecraft server
+
+Use the official server JAR or a Docker image. Offline mode is easiest for local testing (no account needed):
+
+```bash
+# PaperMC example — download from https://papermc.io/downloads
+java -Xmx2G -jar paper.jar --nogui
+
+# docker-compose alternative (itzg image)
+docker run -it -e EULA=TRUE -e ONLINE_MODE=FALSE \
+  -p 25565:25565 itzg/minecraft-server
+```
+
+The server is ready when you see `Done (X.Xs)! For help, type "help"`.
+
+### 2 — Start the Mindcraft runtime
+
+```bash
+# First time: copy env file and set your port
+cp .env.example .env
+
+# Launch
+./start-dev       # Linux/macOS
+start-dev.bat     # Windows
+```
+
+Expected output:
+
+```
+[Mindcraft] API listening on port 8080
+[Mindcraft] Persistence: /home/you/.mindcraft/bots
+```
+
+### 3 — Connect a bot
+
+```bash
+# Using the included helper script
+./spawn-bot.sh
+
+# Or raw curl
+curl -X POST http://localhost:8080/api/bots \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "localhost",
+    "port": 25565,
+    "username": "MindBot",
+    "auth": "offline",
+    "llm": { "provider": "ollama", "model": "llama3.2" }
+  }'
+```
+
+### 4 — Expected first-run behaviour
+
+| Time | What happens |
+|---|---|
+| 0–2 s | Bot appears in the Minecraft world |
+| 2–5 s | Bot logs `connected` and enters idle state |
+| First chat | Bot responds in-game; LLM is called once |
+| LLM offline | Keyword fallback handles `follow`, `stop`, `mine`, `build` |
+
+**Check bot status at any time:**
+
+```bash
+curl -s http://localhost:8080/api/bots | jq '.[].id'
+curl -s http://localhost:8080/api/bots/<id>/runtime | jq '.task,.zone'
+```
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -375,6 +455,22 @@ Planner → Executors  ← movement, mining, building, combat, idle…
 
 ```bash
 pnpm run typecheck        # full typecheck across all packages
-pnpm run build            # typecheck + build
-pnpm --filter @workspace/api-server run dev   # run dev server
+pnpm run build            # typecheck + build all packages
+
+# Dev server (picks up changes after rebuild)
+pnpm --filter @workspace/api-server run dev
+
+# Production build only (outputs to artifacts/api-server/dist/)
+pnpm --filter @workspace/api-server run build
+
+# Run from built output
+node --enable-source-maps artifacts/api-server/dist/index.mjs
+```
+
+Or use the convenience scripts:
+
+```bash
+./start-dev     # dev mode — rebuilds then starts
+./start-prod    # production mode — builds then starts from dist/
+./spawn-bot.sh  # spawn a test bot against a local server
 ```
