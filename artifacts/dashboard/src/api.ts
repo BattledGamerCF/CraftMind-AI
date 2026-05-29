@@ -4,10 +4,15 @@ async function apiFetch<T = unknown>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      ...init,
+    });
+  } catch {
+    throw new Error("Failed to fetch");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(
@@ -15,6 +20,53 @@ async function apiFetch<T = unknown>(
     );
   }
   return res.json() as Promise<T>;
+}
+
+export function friendlyError(err: unknown, _context: string): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (
+    msg.includes("Failed to fetch") ||
+    msg.includes("NetworkError") ||
+    msg.includes("Load failed") ||
+    msg.includes("502") ||
+    msg.includes("503")
+  ) {
+    return "Cannot reach the API server. Is it running? Try: ./start-dev";
+  }
+  if (msg.includes("ECONNREFUSED") || msg.includes("connect ECONNREFUSED")) {
+    return "Bot couldn't connect to the Minecraft server. Check the host and port.";
+  }
+  if (
+    msg.includes("Invalid protocol version") ||
+    msg.includes("unsupported protocol") ||
+    msg.includes("version mismatch")
+  ) {
+    return "Unsupported Minecraft version. Try a different version or use Auto-detect.";
+  }
+  if (
+    msg.includes("API_KEY") ||
+    msg.includes("Unauthorized") ||
+    msg.includes("401") ||
+    msg.includes("403")
+  ) {
+    return "LLM provider authentication failed. Check the API key environment variable on the server.";
+  }
+  if (msg.includes("OPENAI_API_KEY") || msg.includes("ANTHROPIC_API_KEY")) {
+    return "Missing API key. Set the provider's key as an environment variable before starting the server.";
+  }
+  if (msg.includes("llm.provider") || msg.includes("llm.model")) {
+    return "Provider and model are both required.";
+  }
+  if (msg.includes("host is required")) {
+    return "Server host is required.";
+  }
+  if (msg.includes("Bot not found")) {
+    return "Bot not found — it may have already disconnected.";
+  }
+  if (msg.includes("not supported") || msg.includes("not yet supported")) {
+    return msg;
+  }
+  return msg;
 }
 
 export interface BotStatus {
@@ -100,6 +152,9 @@ export const api = {
 
   deleteBot: (id: string) =>
     apiFetch<{ success: boolean }>(`/bots/${id}`, { method: "DELETE" }),
+
+  reconnectBot: (id: string) =>
+    apiFetch<{ success: boolean }>(`/bots/${id}/reconnect`, { method: "POST" }),
 
   sendCommand: (
     id: string,

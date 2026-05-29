@@ -341,7 +341,70 @@ Open **http://localhost:3001/dashboard/** in your browser.
 - **New Bot form** — connect a bot with provider, model, cognitive mode, and playstyle dropdowns
 - **Runtime panel** — live task queue, risk score, alertness, memory summary, telemetry
 - **Quick actions** — Follow, Stop, Mine Wood, Build Shelter, Return Home, Report Status
-- **Auto-polling** — bot list refreshes every 3 s; runtime refreshes every 2 s
+- **Auto-polling** — bot list refreshes every 3 s; runtime refreshes every 2 s; pauses automatically when the tab is hidden
+
+### Troubleshooting
+
+**Dashboard shows "API offline"**
+
+The API server isn't running. Start it:
+
+```bash
+./start-dev
+```
+
+Wait a few seconds, then the dashboard will reconnect automatically.
+
+---
+
+**Bot won't connect / "couldn't connect to Minecraft server"**
+
+- Confirm the Minecraft server is running and reachable from the machine running the API server.
+- Check the host and port (default: `localhost:25565`).
+- If the server is online-mode, set **Auth Mode → Microsoft** and ensure the bot account has a valid Microsoft login.
+
+---
+
+**"Unsupported Minecraft version"**
+
+The bot couldn't handshake with the server. Try:
+
+1. Select the exact server version from the **Minecraft Version** dropdown.
+2. Or select **Auto-detect** — mineflayer will read the version from the server handshake.
+3. If the server runs a version not in the tested list (e.g. 1.21.x), it may still work on Auto-detect.
+
+---
+
+**Ollama not running / "LLM provider error"**
+
+- Start Ollama: `ollama serve`
+- Pull the model if you haven't: `ollama pull llama3.2`
+- The dashboard will use `http://localhost:11434` by default. If Ollama runs elsewhere, set the **Ollama URL** field.
+
+---
+
+**OpenAI or Anthropic "authentication failed"**
+
+Set the key as an environment variable before starting the API server:
+
+```bash
+export OPENAI_API_KEY=sk-...
+./start-dev
+```
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+./start-dev
+```
+
+---
+
+**"Reconnect isn't supported yet"**
+
+Full hot-reconnect is not implemented. To reconnect a disconnected bot:
+
+1. Click **Disconnect** to remove it.
+2. Click **+ New Bot** and fill in the same settings.
 
 ---
 

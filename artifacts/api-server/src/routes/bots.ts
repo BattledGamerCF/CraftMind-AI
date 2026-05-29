@@ -254,6 +254,14 @@ router.get("/bots/:id/runtime", (req, res) => {
   });
 });
 
+router.post("/bots/:id/reconnect", (_req, res) => {
+  // Full reconnect (drop + re-establish the mineflayer connection) is not yet
+  // implemented. Disconnect the bot and create a new one to reconnect.
+  res.status(501).json({
+    error: "Reconnect isn't supported yet — disconnect and create a new bot to reconnect.",
+  });
+});
+
 router.get("/swarm", (_req, res) => {
   res.json({ bots: sharedWorldModel.getBots() });
 });

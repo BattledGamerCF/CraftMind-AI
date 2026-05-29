@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { api, type BotStatus, type RuntimeData, type MetaData, type CreateBotPayload } from "./api";
+import { api, friendlyError, type BotStatus, type RuntimeData, type MetaData, type CreateBotPayload } from "./api";
 
 const DEFAULT_MODELS: Record<string, string> = {
   ollama: "llama3.2",
@@ -7,22 +7,32 @@ const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-3-haiku-20240307",
 };
 
-function stateBadge(state: string, connected: boolean) {
-  if (!connected) return <span className="badge badge-red"><span className="dot" />offline</span>;
-  const map: Record<string, string> = {
-    idle: "badge-gray",
+// ── Connection / State badge ──────────────────────────────────────────────────
+
+function ConnectionBadge({ bot }: { bot: BotStatus }) {
+  if (!bot.connected) {
+    const connMap: Record<string, [string, string]> = {
+      connecting:   ["badge-yellow", "connecting"],
+      reconnecting: ["badge-yellow", "reconnecting"],
+      failed:       ["badge-red",    "failed"],
+    };
+    const [cls, label] = connMap[bot.state] ?? ["badge-red", "offline"];
+    return <span className={`badge ${cls}`}><span className="dot" />{label}</span>;
+  }
+  const taskMap: Record<string, string> = {
+    idle:      "badge-green",
     following: "badge-blue",
-    mining: "badge-yellow",
-    building: "badge-blue",
-    combat: "badge-red",
-    fleeing: "badge-red",
-    eating: "badge-green",
+    mining:    "badge-yellow",
+    building:  "badge-blue",
+    combat:    "badge-red",
+    fleeing:   "badge-red",
+    eating:    "badge-green",
     exploring: "badge-blue",
   };
+  const label = bot.state === "idle" ? "online" : bot.state;
   return (
-    <span className={`badge ${map[state] ?? "badge-gray"}`}>
-      <span className="dot" />
-      {state}
+    <span className={`badge ${taskMap[bot.state] ?? "badge-green"}`}>
+      <span className="dot" />{label}
     </span>
   );
 }
@@ -33,7 +43,7 @@ function riskColor(r: number) {
   return "accent";
 }
 
-// ── Create Bot Modal ─────────────────────────────────────────────────────────
+// ── Create Bot Modal ──────────────────────────────────────────────────────────
 
 interface CreateModalProps {
   meta: MetaData | null;
@@ -44,9 +54,9 @@ interface CreateModalProps {
 function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
   const [form, setForm] = useState({
     host: "localhost",
-    port: "25565",
+    portRaw: "25565",
     username: "MindBot",
-    version: "",
+    version: meta?.latestTested ?? "",
     auth: "offline" as "offline" | "microsoft",
     provider: "ollama",
     model: "llama3.2",
@@ -54,8 +64,17 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
     cognitiveMode: "balanced",
     playstyle: "companion",
   });
+  const [portErr, setPortErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const versionAutoSet = useRef(false);
+
+  useEffect(() => {
+    if (meta?.latestTested && !versionAutoSet.current) {
+      versionAutoSet.current = true;
+      setForm((f) => (f.version === "" ? { ...f, version: meta.latestTested } : f));
+    }
+  }, [meta?.latestTested]);
 
   function setField<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => {
@@ -67,19 +86,40 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
     });
   }
 
+  function validatePort() {
+    const raw = form.portRaw.trim();
+    if (raw === "") { setPortErr(null); return; }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      setPortErr("Port must be 1–65535");
+    } else {
+      setPortErr(null);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setErr(null);
+    const raw = form.portRaw.trim();
+    const port = raw === "" ? 25565 : Number(raw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      setPortErr("Port must be 1–65535");
+      return;
+    }
+    if (!form.host.trim()) {
+      setErr("Server host is required.");
+      return;
+    }
+    setBusy(true);
     try {
       const payload: CreateBotPayload = {
-        host: form.host,
-        port: Number(form.port) || 25565,
-        username: form.username,
+        host: form.host.trim(),
+        port,
+        username: form.username.trim(),
         auth: form.auth,
         llm: {
           provider: form.provider,
-          model: form.model,
+          model: form.model.trim(),
           ...(form.provider === "ollama" && form.ollamaUrl
             ? { baseUrl: form.ollamaUrl }
             : {}),
@@ -92,7 +132,7 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
       onCreated(bot);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to create bot");
+      setErr(friendlyError(e, "create"));
     } finally {
       setBusy(false);
     }
@@ -127,16 +167,20 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                   value={form.host}
                   onChange={(e) => setField("host", e.target.value)}
                   placeholder="localhost"
+                  autoComplete="off"
                 />
               </div>
               <div className="form-field">
                 <label>Port</label>
                 <input
-                  type="number"
-                  value={form.port}
-                  onChange={(e) => setField("port", e.target.value)}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={form.portRaw}
+                  onChange={(e) => { setPortErr(null); setField("portRaw", e.target.value); }}
+                  onBlur={validatePort}
                   placeholder="25565"
                 />
+                {portErr && <span className="field-error">{portErr}</span>}
               </div>
             </div>
 
@@ -164,10 +208,8 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
 
             <div className="form-field">
               <label>
-                Minecraft Version{" "}
-                <span style={{ color: "var(--text-dim)", fontWeight: 400, textTransform: "none" }}>
-                  (optional — auto-detect if blank)
-                </span>
+                Minecraft Version
+                <span className="label-optional">optional — auto-detect if blank</span>
               </label>
               <select
                 value={form.version}
@@ -176,7 +218,7 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                 <option value="">Auto-detect</option>
                 {(meta?.testedVersions ?? []).map((v) => (
                   <option key={v} value={v}>
-                    {v}{v === meta?.latestTested ? " ✓ latest tested" : ""}
+                    {v}{v === meta?.latestTested ? " — latest tested" : ""}
                   </option>
                 ))}
               </select>
@@ -210,16 +252,21 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
             {form.provider === "ollama" && (
               <div className="form-field">
                 <label>
-                  Ollama URL{" "}
-                  <span style={{ color: "var(--text-dim)", fontWeight: 400, textTransform: "none" }}>
-                    (default: http://localhost:11434)
-                  </span>
+                  Ollama URL
+                  <span className="label-optional">default: http://localhost:11434</span>
                 </label>
                 <input
                   value={form.ollamaUrl}
                   onChange={(e) => setField("ollamaUrl", e.target.value)}
                   placeholder="http://localhost:11434"
                 />
+              </div>
+            )}
+
+            {(form.provider === "openai" || form.provider === "anthropic") && (
+              <div className="info-banner">
+                Requires <code>{form.provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"}</code>{" "}
+                set as an environment variable on the API server.
               </div>
             )}
 
@@ -268,55 +315,78 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
 // ── Quick Actions ─────────────────────────────────────────────────────────────
 
 interface QuickActionsProps {
-  botId: string;
+  bot: BotStatus;
   onError: (msg: string) => void;
+  onDisconnect: () => void;
+  onReconnect: () => void;
 }
 
-function QuickActions({ botId, onError }: QuickActionsProps) {
+function QuickActions({ bot, onError, onDisconnect, onReconnect }: QuickActionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
   async function run(label: string, command: string, args?: Record<string, unknown>) {
     setBusy(label);
     try {
-      await api.sendCommand(botId, command, args);
+      await api.sendCommand(bot.id, command, args);
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Command failed");
+      onError(friendlyError(e, "command"));
     } finally {
       setBusy(null);
     }
   }
 
   const actions = [
-    { label: "Follow", command: "follow", args: undefined },
-    { label: "Mine Wood", command: "mine", args: { resource: "wood" } },
-    { label: "Build Shelter", command: "build", args: { structure: "simple_shelter" } },
-    { label: "Return Home", command: "return_home", args: undefined },
+    { label: "Follow",        command: "follow",        args: undefined },
+    { label: "Mine Wood",     command: "mine",          args: { resource: "wood" } },
+    { label: "Build Shelter", command: "build",         args: { structure: "simple_shelter" } },
+    { label: "Return Home",   command: "return_home",   args: undefined },
     { label: "Report Status", command: "report_status", args: undefined },
   ];
 
   return (
     <div className="card">
-      <div className="card-title">Quick Actions</div>
-      <div className="action-row">
-        {actions.map((a) => (
+      <div className="card-title">Actions</div>
+      <div className="action-group">
+        <div className="action-row">
+          {actions.map((a) => (
+            <button
+              key={a.label}
+              className="btn-action"
+              disabled={busy !== null}
+              onClick={() => run(a.label, a.command, a.args)}
+            >
+              {busy === a.label ? <span className="loading-dot" /> : null}
+              {a.label}
+            </button>
+          ))}
           <button
-            key={a.label}
-            className="btn-action"
+            className="btn-action stop"
             disabled={busy !== null}
-            onClick={() => run(a.label, a.command, a.args)}
+            onClick={() => run("Stop", "stop")}
           >
-            {busy === a.label ? <span className="loading-dot" /> : null}
-            {a.label}
+            {busy === "Stop" ? <span className="loading-dot" /> : null}
+            Stop Task
           </button>
-        ))}
-        <button
-          className="btn-action stop"
-          disabled={busy !== null}
-          onClick={() => run("Stop", "stop")}
-        >
-          {busy === "Stop" ? <span className="loading-dot" /> : null}
-          Stop
-        </button>
+        </div>
+        <div className="action-divider" />
+        <div className="action-row">
+          <button
+            className="btn-action reconnect"
+            disabled={busy !== null || bot.connected}
+            title={bot.connected ? "Bot is already connected" : "Reconnect to server"}
+            onClick={() => { onReconnect(); }}
+          >
+            Reconnect
+          </button>
+          <button
+            className="btn-action disconnect"
+            disabled={busy !== null}
+            onClick={() => { setBusy("Disconnect"); onDisconnect(); }}
+          >
+            {busy === "Disconnect" ? <span className="loading-dot" /> : null}
+            Disconnect
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -330,105 +400,115 @@ interface RuntimePanelProps {
 
 function RuntimePanel({ runtime }: RuntimePanelProps) {
   const { task, zone, operationalState, cognitiveMode, playstyle, riskScore, alertness, memory, telemetry } = runtime;
+  const [showTelemetry, setShowTelemetry] = useState(false);
 
   return (
     <>
       <div className="card">
-        <div className="card-title">Status</div>
-        <div className="stat-grid">
-          <div className="stat-item">
-            <div className="stat-label">Zone</div>
-            <div className="stat-value">{zone}</div>
+        <div className="card-title">Runtime</div>
+        <div className="runtime-primary">
+          <div className="runtime-task">
+            <div className="rt-label">Current Task</div>
+            <div className="rt-task-value">{task.current?.type ?? "idle"}</div>
+            {task.queueLength > 0 && (
+              <div className="rt-queue-hint">+{task.queueLength} queued</div>
+            )}
           </div>
-          <div className="stat-item">
-            <div className="stat-label">State</div>
-            <div className="stat-value">{operationalState}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Playstyle</div>
-            <div className="stat-value">{playstyle?.profile ?? "—"}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Cognitive Mode</div>
-            <div className="stat-value">{cognitiveMode}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Risk</div>
-            <div className={`stat-value ${riskColor(riskScore)}`}>{(riskScore * 100).toFixed(0)}%</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Alertness</div>
-            <div className="stat-value">{(alertness * 100).toFixed(0)}%</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-title">Task Queue</div>
-        <div className="stat-grid">
-          <div className="stat-item">
-            <div className="stat-label">Current Task</div>
-            <div className="stat-value" style={{ fontSize: 13 }}>
-              {task.current?.type ?? "idle"}
+          <div className="stat-grid" style={{ flex: 1 }}>
+            <div className="stat-item">
+              <div className="stat-label">State</div>
+              <div className="stat-value">{operationalState}</div>
             </div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Queue Length</div>
-            <div className="stat-value">{task.queueLength}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Goal</div>
-            <div className="stat-value" style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {memory.goal ?? "none"}
+            <div className="stat-item">
+              <div className="stat-label">Zone</div>
+              <div className="stat-value">{zone}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Risk</div>
+              <div className={`stat-value ${riskColor(riskScore)}`}>{(riskScore * 100).toFixed(0)}%</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Alertness</div>
+              <div className="stat-value">{(alertness * 100).toFixed(0)}%</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Mode</div>
+              <div className="stat-value">{cognitiveMode}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Playstyle</div>
+              <div className="stat-value">{playstyle?.profile ?? "—"}</div>
             </div>
           </div>
         </div>
+        {memory.goal && (
+          <div className="rt-goal">
+            <span className="rt-goal-label">Goal</span>
+            <span className="rt-goal-text">{memory.goal}</span>
+          </div>
+        )}
       </div>
 
-      <div className="card">
-        <div className="card-title">Telemetry</div>
-        <div className="stat-grid">
-          <div className="stat-item">
-            <div className="stat-label">Total Tasks</div>
-            <div className="stat-value">{telemetry.totalTasks}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Success Rate</div>
-            <div className={`stat-value ${telemetry.successRate >= 0.7 ? "accent" : "warn"}`}>
-              {((telemetry.successRate ?? 0) * 100).toFixed(0)}%
-            </div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Threats</div>
-            <div className={`stat-value ${memory.threatCount > 0 ? "danger" : ""}`}>
-              {memory.threatCount}
-            </div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Waypoints</div>
-            <div className="stat-value">{memory.waypointCount}</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-label">Events Logged</div>
-            <div className="stat-value">{memory.episodicEventCount}</div>
-          </div>
-        </div>
-      </div>
-
-      {memory.recentEvents.length > 0 && (
+      {(memory.threatCount > 0 || memory.recentEvents.length > 0) && (
         <div className="card">
-          <div className="card-title">Recent Events</div>
-          <div className="event-list">
-            {memory.recentEvents.map((ev, i) => (
-              <div key={i} className="event-item">
-                <div className="event-kind">{ev.kind}</div>
-                <div className="event-desc">{ev.description}</div>
-                <div className="event-time">{ev.minsAgo}m ago</div>
-              </div>
-            ))}
-          </div>
+          <div className="card-title">Memory</div>
+          {memory.threatCount > 0 && (
+            <div className="rt-threat-banner">
+              ⚠ {memory.threatCount} nearby threat{memory.threatCount !== 1 ? "s" : ""}
+            </div>
+          )}
+          {memory.recentEvents.length > 0 && (
+            <div className="event-list" style={{ marginTop: memory.threatCount > 0 ? 10 : 0 }}>
+              {memory.recentEvents.map((ev, i) => (
+                <div key={i} className="event-item">
+                  <div className="event-kind">{ev.kind}</div>
+                  <div className="event-desc">{ev.description}</div>
+                  <div className="event-time">{ev.minsAgo}m ago</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
+
+      <div className="card">
+        <button
+          className="card-title-btn"
+          onClick={() => setShowTelemetry((v) => !v)}
+          type="button"
+        >
+          <span className="card-title" style={{ marginBottom: 0 }}>Telemetry</span>
+          <span className="collapse-arrow">{showTelemetry ? "▲" : "▼"}</span>
+        </button>
+        {showTelemetry && (
+          <div className="stat-grid" style={{ marginTop: 12 }}>
+            <div className="stat-item">
+              <div className="stat-label">Total Tasks</div>
+              <div className="stat-value">{telemetry.totalTasks}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Success Rate</div>
+              <div className={`stat-value ${telemetry.successRate >= 0.7 ? "accent" : "warn"}`}>
+                {((telemetry.successRate ?? 0) * 100).toFixed(0)}%
+              </div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Threats Seen</div>
+              <div className={`stat-value ${memory.threatCount > 0 ? "danger" : ""}`}>
+                {memory.threatCount}
+              </div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Waypoints</div>
+              <div className="stat-value">{memory.waypointCount}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Events Logged</div>
+              <div className="stat-value">{memory.episodicEventCount}</div>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }
@@ -442,40 +522,49 @@ export default function App() {
   const [meta, setMeta] = useState<MetaData | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [cmdError, setCmdError] = useState<string | null>(null);
+  const [apiDown, setApiDown] = useState(false);
   const [polling, setPolling] = useState(true);
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const botsInFlight = useRef(false);
+  const runtimeInFlight = useRef(false);
 
   const loadBots = useCallback(async () => {
+    if (botsInFlight.current || document.hidden) return;
+    botsInFlight.current = true;
     try {
       const list = await api.listBots();
       setBots(list);
-      // Auto-clear selection if bot was removed
+      setApiDown(false);
       if (selectedIdRef.current && !list.find((b) => b.id === selectedIdRef.current)) {
         setSelectedId(null);
         setRuntime(null);
       }
     } catch {
-      // server may be starting — silently ignore
+      setApiDown(true);
+    } finally {
+      botsInFlight.current = false;
     }
   }, []);
 
   const loadRuntime = useCallback(async (id: string) => {
+    if (runtimeInFlight.current || document.hidden) return;
+    runtimeInFlight.current = true;
     try {
       const data = await api.getRuntime(id);
       setRuntime(data);
     } catch {
       setRuntime(null);
+    } finally {
+      runtimeInFlight.current = false;
     }
   }, []);
 
-  // Load meta once
   useEffect(() => {
     api.getMeta().then(setMeta).catch(() => {});
   }, []);
 
-  // Poll bot list
   useEffect(() => {
     loadBots();
     if (!polling) return;
@@ -483,7 +572,6 @@ export default function App() {
     return () => clearInterval(t);
   }, [loadBots, polling]);
 
-  // Poll runtime for selected bot
   useEffect(() => {
     if (!selectedId) { setRuntime(null); return; }
     loadRuntime(selectedId);
@@ -492,13 +580,34 @@ export default function App() {
     return () => clearInterval(t);
   }, [selectedId, loadRuntime, polling]);
 
-  async function handleDelete(id: string) {
+  // Resume immediately when tab becomes active
+  useEffect(() => {
+    function onVisible() {
+      if (!document.hidden) {
+        loadBots();
+        if (selectedIdRef.current) loadRuntime(selectedIdRef.current);
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadBots, loadRuntime]);
+
+  async function handleDisconnect(id: string) {
     try {
       await api.deleteBot(id);
       if (selectedId === id) { setSelectedId(null); setRuntime(null); }
       await loadBots();
     } catch (e) {
-      setCmdError(e instanceof Error ? e.message : "Failed to disconnect bot");
+      setCmdError(friendlyError(e, "disconnect"));
+    }
+  }
+
+  async function handleReconnect(id: string) {
+    try {
+      await api.reconnectBot(id);
+      await loadBots();
+    } catch (e) {
+      setCmdError(friendlyError(e, "reconnect"));
     }
   }
 
@@ -511,6 +620,7 @@ export default function App() {
         <h1>Mindcraft</h1>
         <span className="subtitle">Bot Dashboard</span>
         <span style={{ flex: 1 }} />
+        {apiDown && <span className="api-down-badge">API offline</span>}
         <button
           className="btn btn-secondary btn-sm"
           onClick={() => setPolling((p) => !p)}
@@ -521,7 +631,6 @@ export default function App() {
       </header>
 
       <div className="app-body">
-        {/* Sidebar — bot list */}
         <aside className="sidebar">
           <div className="sidebar-header">
             <h2>Bots ({bots.length})</h2>
@@ -534,9 +643,14 @@ export default function App() {
           </div>
 
           <div className="bot-list">
-            {bots.length === 0 && (
+            {bots.length === 0 && !apiDown && (
               <div style={{ padding: "20px 16px", color: "var(--text-dim)", fontSize: 12 }}>
                 No bots connected. Click <strong style={{ color: "var(--text-muted)" }}>+ New Bot</strong> to get started.
+              </div>
+            )}
+            {apiDown && (
+              <div className="sidebar-api-warn">
+                API server unreachable.<br />Run <code>./start-dev</code> to start it.
               </div>
             )}
             {bots.map((bot) => (
@@ -547,7 +661,7 @@ export default function App() {
               >
                 <div className="bot-item-top">
                   <span className="bot-name">{bot.username}</span>
-                  {stateBadge(bot.state, bot.connected)}
+                  <ConnectionBadge bot={bot} />
                 </div>
                 <div className="bot-meta">
                   <span>{bot.server}</span>
@@ -562,7 +676,6 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Main panel */}
         <main className="main-panel">
           {cmdError && (
             <div className="error-banner">
@@ -583,40 +696,31 @@ export default function App() {
             </div>
           ) : (
             <>
-              {/* Bot header */}
               <div className="bot-header-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <h2>{selectedBot.username}</h2>
-                  {stateBadge(selectedBot.state, selectedBot.connected)}
+                  <ConnectionBadge bot={selectedBot} />
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 12, alignItems: "center" }}>
-                    {selectedBot.position && (
-                      <span>
-                        {Math.round(selectedBot.position.x)},{" "}
-                        {Math.round(selectedBot.position.y)},{" "}
-                        {Math.round(selectedBot.position.z)}
-                      </span>
-                    )}
-                    <span>❤ {selectedBot.health}/20</span>
-                    <span>🍖 {selectedBot.food}/20</span>
-                  </div>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => handleDelete(selectedBot.id)}
-                  >
-                    Disconnect
-                  </button>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 12, alignItems: "center" }}>
+                  {selectedBot.position && (
+                    <span>
+                      {Math.round(selectedBot.position.x)},{" "}
+                      {Math.round(selectedBot.position.y)},{" "}
+                      {Math.round(selectedBot.position.z)}
+                    </span>
+                  )}
+                  <span>❤ {selectedBot.health}/20</span>
+                  <span>🍖 {selectedBot.food}/20</span>
                 </div>
               </div>
 
-              {/* Quick actions */}
               <QuickActions
-                botId={selectedBot.id}
+                bot={selectedBot}
                 onError={setCmdError}
+                onDisconnect={() => handleDisconnect(selectedBot.id)}
+                onReconnect={() => handleReconnect(selectedBot.id)}
               />
 
-              {/* Runtime data */}
               {runtime ? (
                 <RuntimePanel runtime={runtime} />
               ) : (
