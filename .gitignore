@@ -41,9 +41,10 @@ testem.log
 .DS_Store
 Thumbs.db
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
-
-# Replit
+# Replit (environment-specific files, not part of the project)
+.replit
+.replitignore
+.replit.nix
 .cache/
 .local/
+
