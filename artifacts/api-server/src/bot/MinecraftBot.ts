@@ -41,7 +41,10 @@ export class MinecraftBot {
     this.router = new CognitiveRouter();
     this.intentCache = new IntentCache();
     this.cognitionTelemetry = new CognitionTelemetry();
-    this.persistence = new PersistenceManager(id);
+    // Stable key derived from identity — survives server restarts and reconnects.
+    // Using UUID (id) would mean saved state is never found after re-creation.
+    const persistenceKey = `${config.username}@${config.host}_${config.port ?? 25565}`;
+    this.persistence = new PersistenceManager(persistenceKey);
   }
 
   setMode(mode: CognitiveMode) {

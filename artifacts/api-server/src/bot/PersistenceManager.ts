@@ -35,8 +35,15 @@ export class PersistenceManager {
   private filePath: string;
   private saveTimer: NodeJS.Timeout | null = null;
 
-  constructor(botId: string) {
-    this.filePath = join(DATA_DIR, `${botId}.json`);
+  /**
+   * @param key - Stable identity string (e.g. "username@host_port").
+   *              Must NOT be a transient UUID — the key must be the same
+   *              across server restarts so state can be restored on reconnect.
+   */
+  constructor(key: string) {
+    // Replace any character that is unsafe in a filename with underscore
+    const safe = key.replace(/[^a-zA-Z0-9@._-]/g, "_").toLowerCase();
+    this.filePath = join(DATA_DIR, `${safe}.json`);
   }
 
   async load(): Promise<PersistedState | null> {
