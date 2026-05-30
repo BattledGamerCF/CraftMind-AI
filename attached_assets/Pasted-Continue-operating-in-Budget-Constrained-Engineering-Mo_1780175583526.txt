@@ -1,0 +1,180 @@
+Continue operating in Budget-Constrained Engineering Mode.
+
+Mode target: Economy.
+
+This is the Release Validation Phase.
+
+NO new features.
+
+NO architecture changes.
+
+NO gameplay systems.
+
+Primary objective:
+
+Prove that Mindcraft can be installed and launched successfully by a completely new user.
+
+Treat the codebase as feature-frozen.
+
+--------------------------------------------------
+PHASE 1: INSTALL.md AUDIT
+--------------------------------------------------
+
+Read INSTALL.md line-by-line.
+
+Verify every command, filename, path, and URL actually exists.
+
+Check for:
+
+- outdated commands
+- missing files
+- wrong startup steps
+- incorrect ports
+- missing prerequisites
+- assumptions about Git, Node, pnpm, or terminal knowledge
+
+Rewrite any sections that do not match the current codebase exactly.
+
+Goal:
+
+INSTALL.md must describe reality, not intent.
+
+--------------------------------------------------
+PHASE 2: README CONSISTENCY AUDIT
+--------------------------------------------------
+
+Cross-check README against:
+
+- launcher.mjs
+- dashboard startup flow
+- API startup flow
+- current endpoints
+- current Minecraft version support
+
+Fix any drift.
+
+README and INSTALL.md must agree.
+
+--------------------------------------------------
+PHASE 3: FIRST-RUN VALIDATION
+--------------------------------------------------
+
+Simulate a brand-new user.
+
+Starting assumptions:
+
+- fresh machine
+- no project history
+- no environment variables
+- no previous config
+
+Verify:
+
+1. .env generation works
+2. launcher starts successfully
+3. API starts
+4. dashboard starts
+5. browser opens
+6. welcome modal appears
+7. logs panel functions
+8. create bot flow works
+
+Identify any missing steps.
+
+Fix only actual issues.
+
+--------------------------------------------------
+PHASE 4: STARTUP SCRIPT VALIDATION
+--------------------------------------------------
+
+Verify:
+
+Windows:
+- Mindcraft.bat
+- Mindcraft.ps1
+
+macOS:
+- Mindcraft.command
+
+Linux:
+- Mindcraft.sh
+
+Ensure:
+
+- correct paths
+- correct quoting
+- spaces in directory names handled
+- launcher location assumptions valid
+
+Fix any issues discovered.
+
+--------------------------------------------------
+PHASE 5: PRODUCTION BUILD VALIDATION
+--------------------------------------------------
+
+Verify the documented production path:
+
+- build
+- start
+- dashboard
+- API
+
+Ensure no hidden dependency on dev mode.
+
+Fix only actual breakages.
+
+--------------------------------------------------
+PHASE 6: DASHBOARD/API INTEGRATION VALIDATION
+--------------------------------------------------
+
+Verify:
+
+- VITE_API_BASE handling
+- localhost behavior
+- launcher behavior
+- dashboard polling
+- logs endpoint
+- runtime endpoint
+
+Ensure dashboard works when started from launcher exactly as documented.
+
+--------------------------------------------------
+PHASE 7: USER EXPERIENCE GAP CHECK
+--------------------------------------------------
+
+Identify anything that would confuse a first-time user.
+
+Examples:
+
+- unexplained terminology
+- missing instructions
+- dead buttons
+- unclear error messages
+- unsupported versions not explained
+
+Fix only high-confidence issues.
+
+--------------------------------------------------
+PHASE 8: RELEASE REPORT
+--------------------------------------------------
+
+Produce a concise report:
+
+PASS:
+- verified working paths
+
+WARN:
+- known limitations
+
+FAIL:
+- anything that still prevents successful first launch
+
+Do not add features.
+
+Do not expand scope.
+
+Only validate, correct, and prepare for release.
+
+Goal:
+
+A user should be able to download Mindcraft, launch it, open the dashboard, create a bot, and connect to Minecraft without needing source-code knowledge.

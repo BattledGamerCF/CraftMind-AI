@@ -6,26 +6,27 @@
  * then opens the dashboard in the default browser.
  *
  * Usage:
- *   node launcher.mjs           — dev mode (Vite + ts-node)
- *   node launcher.mjs --prod    — production mode (build first, then serve)
+ *   node launcher.mjs           — dev mode (Vite + ts-node, default)
+ *   node launcher.mjs --prod    — production mode (build first, single server)
  *
- * Environment overrides:
+ * Port overrides (env vars or .env file):
  *   API_PORT=8080    (default)
- *   DASH_PORT=3000   (default)
+ *   DASH_PORT=3000   (default, dev only — prod uses API_PORT for everything)
  */
 
 import { spawn, exec } from "node:child_process";
 import { createServer } from "node:net";
 import { request as httpRequest } from "node:http";
-import { existsSync, copyFileSync } from "node:fs";
-import { platform } from "node:os";
+import { existsSync, copyFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const IS_PROD = process.argv.includes("--prod");
-const API_PORT = parseInt(process.env.API_PORT ?? "8080");
-const DASH_PORT = parseInt(process.env.DASH_PORT ?? "3000");
+
+// Ports start with defaults; overwritten in main() after .env is loaded
+let API_PORT = 8080;
+let DASH_PORT = 3000;
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ const cyan = (s) => `\x1b[36m${s}${R}`;
 const magenta = (s) => `\x1b[35m${s}${R}`;
 const dim = (s) => `\x1b[2m${s}${R}`;
 
-function ok(msg) { console.log(` ${green("✓")} ${msg}`); }
+function ok(msg)   { console.log(` ${green("✓")} ${msg}`); }
 function warn(msg) { console.log(` ${yellow("!")} ${msg}`); }
 function fail(msg) { console.log(` ${red("✗")} ${msg}`); }
 function info(msg) { console.log(` ${cyan("›")} ${msg}`); }
@@ -50,23 +51,55 @@ ${dim("─".repeat(44))}
 `);
 }
 
+// ── .env loader ───────────────────────────────────────────────────────────────
+
+/**
+ * Parse a .env file into a key/value record.
+ * Does NOT override values already in process.env — system env wins.
+ */
+function parseDotEnv(filePath) {
+  const result = {};
+  try {
+    const text = readFileSync(filePath, "utf8");
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx < 0) continue;
+      const key = trimmed.slice(0, idx).trim();
+      let val = trimmed.slice(idx + 1).trim();
+      // Strip matching surrounding quotes
+      if (
+        val.length >= 2 &&
+        ((val[0] === '"' && val.at(-1) === '"') ||
+          (val[0] === "'" && val.at(-1) === "'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      result[key] = val;
+    }
+  } catch {
+    // File not found or unreadable — that's fine
+  }
+  return result;
+}
+
 // ── Pre-flight checks ─────────────────────────────────────────────────────────
 
 function checkNodeVersion() {
   const major = parseInt(process.version.slice(1));
-  if (major < 18) {
-    fail(`Node.js 18 or higher is required. You have ${process.version}.`);
-    fail("Download the latest LTS from https://nodejs.org");
+  if (major < 20) {
+    fail(`Node.js 20 or higher is required. You have ${process.version}.`);
+    fail("Download Node.js 20 LTS from https://nodejs.org");
     process.exit(1);
   }
   ok(`Node.js ${process.version}`);
 }
 
 function checkDeps() {
-  const nm = join(__dir, "node_modules");
-  if (!existsSync(nm)) {
+  if (!existsSync(join(__dir, "node_modules"))) {
     fail("Dependencies are not installed yet.");
-    info('Run this first:  pnpm install');
+    info("Run this first:  pnpm install");
     info("(If you don't have pnpm: npm install -g pnpm)");
     process.exit(1);
   }
@@ -75,7 +108,7 @@ function checkDeps() {
 
 function ensureEnv() {
   const envPath = join(__dir, ".env");
-  const exPath = join(__dir, ".env.example");
+  const exPath  = join(__dir, ".env.example");
   if (!existsSync(envPath) && existsSync(exPath)) {
     copyFileSync(exPath, envPath);
     warn(".env file created from .env.example");
@@ -93,23 +126,30 @@ function isPortFree(port) {
 }
 
 async function checkPorts() {
-  const [apiFree, dashFree] = await Promise.all([
-    isPortFree(API_PORT),
-    isPortFree(DASH_PORT),
-  ]);
-  let ok_ = true;
-  if (!apiFree) {
+  const ports = IS_PROD
+    ? [API_PORT]
+    : [API_PORT, DASH_PORT];
+
+  const results = await Promise.all(ports.map(isPortFree));
+  let allFree = true;
+
+  if (!results[0]) {
     fail(`Port ${API_PORT} is already in use.`);
-    info(`  Another program is using port ${API_PORT}. Stop it, or set API_PORT=<other> before running the launcher.`);
-    ok_ = false;
+    info(`  Stop whatever is using port ${API_PORT}, or set API_PORT=<other> in .env.`);
+    allFree = false;
   }
-  if (!dashFree) {
+  if (!IS_PROD && !results[1]) {
     fail(`Port ${DASH_PORT} is already in use.`);
-    info(`  Another program is using port ${DASH_PORT}. Stop it, or set DASH_PORT=<other> before running the launcher.`);
-    ok_ = false;
+    info(`  Stop whatever is using port ${DASH_PORT}, or set DASH_PORT=<other> in .env.`);
+    allFree = false;
   }
-  if (!ok_) process.exit(1);
-  ok(`Ports ${API_PORT} (API) and ${DASH_PORT} (dashboard) are available`);
+  if (!allFree) process.exit(1);
+
+  if (IS_PROD) {
+    ok(`Port ${API_PORT} is available`);
+  } else {
+    ok(`Ports ${API_PORT} (API) and ${DASH_PORT} (dashboard) are available`);
+  }
 }
 
 // ── Process management ────────────────────────────────────────────────────────
@@ -136,7 +176,7 @@ function spawnProcess(label, color, cmd, args, env) {
     });
   });
   proc.on("exit", (code) => {
-    if (code !== null && code !== 0 && code !== null) {
+    if (code !== null && code !== 0) {
       fail(`${label} process exited unexpectedly (code ${code})`);
     }
   });
@@ -151,10 +191,7 @@ function shutdownAll() {
   for (const p of children) {
     try { p.kill("SIGTERM"); } catch {}
   }
-  setTimeout(() => {
-    info("Goodbye.");
-    process.exit(0);
-  }, 1500);
+  setTimeout(() => { info("Goodbye."); process.exit(0); }, 1500);
 }
 
 // ── Health checks ─────────────────────────────────────────────────────────────
@@ -206,10 +243,17 @@ function buildProject() {
   return new Promise((resolve, reject) => {
     console.log();
     info("Building for production…");
+    // VITE_API_BASE=/api is relative — works because in production the
+    // dashboard is served by the same Express server as the API.
     const proc = spawn(
       "pnpm",
       ["--filter", "@workspace/api-server", "--filter", "@workspace/dashboard", "run", "build"],
-      { stdio: "inherit", shell: process.platform === "win32", cwd: __dir }
+      {
+        stdio: "inherit",
+        shell: process.platform === "win32",
+        cwd: __dir,
+        env: { ...process.env, VITE_API_BASE: "/api" },
+      }
     );
     proc.on("exit", (code) => {
       if (code === 0) resolve();
@@ -223,33 +267,70 @@ function buildProject() {
 async function main() {
   banner();
 
+  // 1. Create .env if missing, then load it into process.env before anything else.
+  //    This lets users configure API_PORT, DASH_PORT, and API keys via .env.
+  ensureEnv();
+  const dotEnvVars = parseDotEnv(join(__dir, ".env"));
+  for (const [k, v] of Object.entries(dotEnvVars)) {
+    if (!(k in process.env)) process.env[k] = v; // system env takes precedence
+  }
+
+  // 2. Read ports now (may have been set in .env)
+  API_PORT  = parseInt(process.env.API_PORT  ?? "8080");
+  DASH_PORT = parseInt(process.env.DASH_PORT ?? "3000");
+
   console.log(bold("Checking requirements…"));
   checkNodeVersion();
   checkDeps();
-  ensureEnv();
   await checkPorts();
   console.log();
 
+  // ── Production mode ────────────────────────────────────────────────────────
   if (IS_PROD) {
     await buildProject().catch((e) => { fail(e.message); process.exit(1); });
-  }
 
-  console.log(bold("Starting services…"));
-
-  if (IS_PROD) {
+    console.log(bold("Starting server…"));
+    const staticDir = join(__dir, "artifacts", "dashboard", "dist", "public");
     spawnProcess(
-      "API", cyan,
+      "Mindcraft", cyan,
       "node",
       ["--enable-source-maps", "artifacts/api-server/dist/index.mjs"],
-      { PORT: String(API_PORT), NODE_ENV: "production" }
+      {
+        PORT: String(API_PORT),
+        NODE_ENV: "production",
+        SERVE_STATIC_DIR: staticDir,
+      }
     );
-    spawnProcess(
-      "UI", magenta,
-      "pnpm",
-      ["exec", "serve", "-s", "artifacts/dashboard/dist/public", "-l", String(DASH_PORT)],
-      {}
+
+    console.log();
+    console.log(bold("Waiting for server to start…"));
+    const prodOk = await waitForService(
+      `http://localhost:${API_PORT}/api/healthz`,
+      "server"
     );
+    process.stdout.write("\n");
+    if (!prodOk) {
+      fail("Server did not become ready within 90 seconds.");
+      fail("Check the [Mindcraft] output above for errors.");
+      shutdownAll();
+      return;
+    }
+    ok("Server is ready");
+
+    const prodUrl = `http://localhost:${API_PORT}/`;
+    console.log();
+    console.log(`${green("✓")} ${bold("Mindcraft is running!")}`);
+    console.log(`  ${dim("Dashboard:")} ${bold(prodUrl)}`);
+    console.log(`  ${dim("API:")}       ${bold(`http://localhost:${API_PORT}/api`)}`);
+    console.log();
+    console.log(dim("  Press Ctrl+C to stop"));
+    console.log();
+    openBrowser(prodUrl);
+
+  // ── Development mode (default) ─────────────────────────────────────────────
   } else {
+    console.log(bold("Starting services…"));
+
     spawnProcess(
       "API", cyan,
       "pnpm",
@@ -266,46 +347,46 @@ async function main() {
         VITE_API_BASE: `http://localhost:${API_PORT}/api`,
       }
     );
+
+    console.log();
+    console.log(bold("Waiting for services to start…"));
+
+    const apiOk = await waitForService(
+      `http://localhost:${API_PORT}/api/healthz`,
+      "API server"
+    );
+    process.stdout.write("\n");
+    if (!apiOk) {
+      fail("API server did not become ready within 90 seconds.");
+      fail("Check the [API] output above for errors.");
+      shutdownAll();
+      return;
+    }
+    ok("API server is ready");
+
+    const dashUrl = `http://localhost:${DASH_PORT}/`;
+    const dashOk = await waitForService(dashUrl, "dashboard");
+    process.stdout.write("\n");
+    if (!dashOk) {
+      fail("Dashboard did not become ready within 90 seconds.");
+      fail("Check the [UI] output above for errors.");
+      shutdownAll();
+      return;
+    }
+    ok("Dashboard is ready");
+
+    console.log();
+    console.log(`${green("✓")} ${bold("Mindcraft is running!")}`);
+    console.log(`  ${dim("Dashboard:")} ${bold(dashUrl)}`);
+    console.log(`  ${dim("API:")}       ${bold(`http://localhost:${API_PORT}/api`)}`);
+    console.log();
+    console.log(dim("  Press Ctrl+C to stop all services"));
+    console.log();
+
+    openBrowser(dashUrl);
   }
 
-  console.log();
-  console.log(bold("Waiting for services to start…"));
-
-  const apiOk = await waitForService(
-    `http://localhost:${API_PORT}/api/healthz`,
-    "API server"
-  );
-  process.stdout.write("\n");
-  if (!apiOk) {
-    fail("API server did not become ready within 90 seconds.");
-    fail("Check the [API] output above for errors.");
-    shutdownAll();
-    return;
-  }
-  ok("API server is ready");
-
-  const dashUrl = `http://localhost:${DASH_PORT}/`;
-  const dashOk = await waitForService(dashUrl, "dashboard");
-  process.stdout.write("\n");
-  if (!dashOk) {
-    fail("Dashboard did not become ready within 90 seconds.");
-    fail("Check the [UI] output above for errors.");
-    shutdownAll();
-    return;
-  }
-  ok("Dashboard is ready");
-
-  console.log();
-  console.log(`${green("✓")} ${bold("Mindcraft is running!")}`);
-  console.log(`  ${dim("Dashboard:")} ${bold(dashUrl)}`);
-  console.log(`  ${dim("API:")}       ${bold(`http://localhost:${API_PORT}/api`)}`);
-  console.log();
-  console.log(dim("  Press Ctrl+C to stop all services"));
-  console.log();
-
-  openBrowser(dashUrl);
-
-  process.on("SIGINT", shutdownAll);
+  process.on("SIGINT",  shutdownAll);
   process.on("SIGTERM", shutdownAll);
 }
 

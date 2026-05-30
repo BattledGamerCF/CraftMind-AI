@@ -31,4 +31,20 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
+// ── Production static file serving ───────────────────────────────────────────
+// When SERVE_STATIC_DIR is set (by the production launcher), serve the built
+// dashboard at the root path. API routes under /api take priority above.
+const staticDir = process.env["SERVE_STATIC_DIR"];
+if (staticDir) {
+  app.use(express.static(staticDir));
+  // SPA fallback: any request that didn't match an API route returns index.html
+  // Use app.use (not app.get) so it works as a final catch-all in Express 5
+  app.use((_req, res) => {
+    res.sendFile("index.html", { root: staticDir }, (err) => {
+      if (err) res.status(404).send("Not found");
+    });
+  });
+  logger.info({ staticDir }, "Serving dashboard static files");
+}
+
 export default app;

@@ -105,18 +105,46 @@ PORT=8080
 
 ### Start
 
+**Recommended — one-click launcher (starts everything, opens browser):**
+
 ```bash
-# Linux / macOS — one-liner launch (loads .env automatically)
+# Linux / macOS
+bash Mindcraft.sh
+
+# macOS (double-click in Finder)
+# Mindcraft.command
+
+# Windows (double-click)
+# Mindcraft.bat
+
+# Or directly
+node launcher.mjs
+```
+
+The launcher starts both the API server and the dashboard, waits until both are healthy, then opens `http://localhost:3000/` automatically.
+
+**API only (developer workflow):**
+
+```bash
+# Linux / macOS
 ./start-dev
 
 # Windows
 start-dev.bat
 
 # Or directly with pnpm
-pnpm --filter @workspace/api-server run dev
+PORT=8080 pnpm --filter @workspace/api-server run dev
 ```
 
-The server starts on port 8080. Persistence data is saved to `~/.mindcraft/bots/` automatically.
+**Production build:**
+
+```bash
+node launcher.mjs --prod
+```
+
+Builds both packages, then serves everything from a single server on `API_PORT` (default 8080).
+
+Persistence data is saved to `~/.mindcraft/bots/` automatically.
 
 ---
 
