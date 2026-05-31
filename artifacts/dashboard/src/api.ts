@@ -164,9 +164,6 @@ export const api = {
   deleteBot: (id: string) =>
     apiFetch<{ success: boolean }>(`/bots/${id}`, { method: "DELETE" }),
 
-  reconnectBot: (id: string) =>
-    apiFetch<{ success: boolean }>(`/bots/${id}/reconnect`, { method: "POST" }),
-
   sendCommand: (
     id: string,
     command: string,

@@ -12,9 +12,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
     "@workspace/api-zod": "workspace:*",
-    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
-    "drizzle-orm": "catalog:",
     "express": "^5.2.1",
     "mineflayer": "^4.37.1",
     "mineflayer-pathfinder": "^2.4.5",
@@ -24,7 +22,6 @@
     "vec3": "^0.2.0"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
