@@ -262,8 +262,8 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                   value={form.auth}
                   onChange={(e) => setField("auth", e.target.value as "offline" | "microsoft")}
                 >
-                  <option value="offline">Offline (local)</option>
-                  <option value="microsoft">Microsoft (online)</option>
+                  <option value="offline">Offline (local) — recommended for testing</option>
+                  <option value="microsoft">Microsoft (online) — experimental, may not work</option>
                 </select>
               </div>
             </div>
@@ -479,8 +479,10 @@ function QuickActions({ bot, onError, onDisconnect, onReconnect }: QuickActionsP
           <button
             className="btn-action reconnect"
             disabled={busy !== null || bot.connected}
-            title={bot.connected ? "Bot is already connected" : "Reconnect to server"}
-            onClick={() => { onReconnect(); }}
+            title="Reconnect is not available yet — disconnect and create a new bot to reconnect"
+            onClick={() => {
+              onError("Reconnect is not available yet. Disconnect this bot and use New Bot to reconnect instead.");
+            }}
           >
             Reconnect
           </button>
@@ -943,6 +945,10 @@ export default function App() {
             {bots.length === 0 && !apiDown && (
               <div style={{ padding: "20px 16px", color: "var(--text-dim)", fontSize: 12 }}>
                 No bots connected. Click <strong style={{ color: "var(--text-muted)" }}>+ New Bot</strong> to get started.
+                <div style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
+                  Note: bots are not automatically restored after a server restart.
+                  Reconnect them with <strong>+ New Bot</strong> — your bot’s memory and habits will be restored.
+                </div>
               </div>
             )}
             {apiDown && (

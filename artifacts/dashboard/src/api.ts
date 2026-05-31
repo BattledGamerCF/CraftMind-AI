@@ -64,7 +64,7 @@ export function friendlyError(err: unknown, _context: string): string {
     return "Bot not found — it may have already disconnected.";
   }
   if (msg.includes("not supported") || msg.includes("not yet supported")) {
-    return msg;
+    return "This feature is not available yet. Try disconnecting and creating a new bot instead.";
   }
   return msg;
 }

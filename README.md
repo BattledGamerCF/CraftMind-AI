@@ -12,7 +12,7 @@ Minimum steps to get a working bot:
 
 ```bash
 # 1. Install
-git clone <repo> && cd mindcraft
+git clone https://github.com/your-org/mindcraft.git && cd mindcraft
 pnpm install
 
 # 2. Start Ollama (local model, no API key needed)
@@ -90,7 +90,7 @@ POST /api/bots
 ### Install
 
 ```bash
-git clone <repo>
+git clone https://github.com/your-org/mindcraft.git
 cd mindcraft
 pnpm install
 ```
