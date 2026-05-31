@@ -46,7 +46,7 @@ You should see something like `v20.x.x` or higher.
 
 If you know what Git is:
 ```
-git clone https://github.com/your-org/mindcraft.git
+git clone https://github.com/BattledGamerCF/CraftMind-AI.git
 ```
 
 ---
