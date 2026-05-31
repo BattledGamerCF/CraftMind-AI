@@ -43,6 +43,17 @@ export function friendlyError(err: unknown, _context: string): string {
   ) {
     return "Unsupported Minecraft version. Try a different version or use Auto-detect.";
   }
+  if (msg.toLowerCase().includes("kicked")) {
+    return "The Minecraft server kicked the bot. If online-mode is on, switch Auth Mode to Microsoft, or set online-mode=false on the server.";
+  }
+  if (
+    msg.includes("Connection timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ENOTFOUND")
+  ) {
+    return "Connection timed out. Check that the server address is correct and the server is running.";
+  }
   if (
     msg.includes("API_KEY") ||
     msg.includes("Unauthorized") ||

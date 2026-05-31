@@ -17,12 +17,7 @@ if (Number.isNaN(port) || port <= 0) {
   process.exit(1);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Failed to start server");
-    process.exit(1);
-  }
-
+const server = app.listen(port, () => {
   const providers: string[] = ["ollama"];
   if (config.llm.openaiApiKey) providers.push("openai");
   if (config.llm.anthropicApiKey) providers.push("anthropic");
@@ -52,6 +47,18 @@ app.listen(port, (err) => {
 
   // Async health checks — results logged but never block startup
   runHealthChecks().catch(() => {});
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    logger.error(
+      { port },
+      `Port ${port} is already in use. Stop the other process or set API_PORT in .env to a different port.`,
+    );
+  } else {
+    logger.error({ err }, "Failed to start server");
+  }
+  process.exit(1);
 });
 
 async function runHealthChecks() {

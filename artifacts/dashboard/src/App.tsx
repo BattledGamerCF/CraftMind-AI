@@ -254,6 +254,9 @@ function CreateModal({ meta, onClose, onCreated }: CreateModalProps) {
                   value={form.username}
                   onChange={(e) => setField("username", e.target.value)}
                   placeholder="MindBot"
+                  pattern="[A-Za-z0-9_]{1,16}"
+                  maxLength={16}
+                  title="1–16 characters: letters, numbers, and underscores only"
                 />
               </div>
               <div className="form-field">
@@ -424,10 +427,9 @@ interface QuickActionsProps {
   bot: BotStatus;
   onError: (msg: string) => void;
   onDisconnect: () => void;
-  onReconnect: () => void;
 }
 
-function QuickActions({ bot, onError, onDisconnect, onReconnect }: QuickActionsProps) {
+function QuickActions({ bot, onError, onDisconnect }: QuickActionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
   async function run(label: string, command: string, args?: Record<string, unknown>) {
@@ -476,16 +478,6 @@ function QuickActions({ bot, onError, onDisconnect, onReconnect }: QuickActionsP
         </div>
         <div className="action-divider" />
         <div className="action-row">
-          <button
-            className="btn-action reconnect"
-            disabled={busy !== null || bot.connected}
-            title="Reconnect is not available yet — disconnect and create a new bot to reconnect"
-            onClick={() => {
-              onError("Reconnect is not available yet. Disconnect this bot and use New Bot to reconnect instead.");
-            }}
-          >
-            Reconnect
-          </button>
           <button
             className="btn-action disconnect"
             disabled={busy !== null}
@@ -887,15 +879,6 @@ export default function App() {
     }
   }
 
-  async function handleReconnect(id: string) {
-    try {
-      await api.reconnectBot(id);
-      await loadBots();
-    } catch (e) {
-      setCmdError(friendlyError(e, "reconnect"));
-    }
-  }
-
   const selectedBot = bots.find((b) => b.id === selectedId) ?? null;
 
   return (
@@ -1032,7 +1015,6 @@ export default function App() {
                 bot={selectedBot}
                 onError={setCmdError}
                 onDisconnect={() => handleDisconnect(selectedBot.id)}
-                onReconnect={() => handleReconnect(selectedBot.id)}
               />
 
               {runtime ? (
