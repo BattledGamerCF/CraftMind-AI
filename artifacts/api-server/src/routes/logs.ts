@@ -6,7 +6,8 @@ const router: IRouter = Router();
 router.get("/logs", (req, res) => {
   const limitParam = req.query["limit"];
   const level = typeof req.query["level"] === "string" ? req.query["level"].toLowerCase() : "all";
-  const search = typeof req.query["search"] === "string" ? req.query["search"].toLowerCase() : "";
+  const rawSearch = typeof req.query["search"] === "string" ? req.query["search"] : "";
+  const search = rawSearch.slice(0, 200).toLowerCase();
   const limit = limitParam ? Math.min(parseInt(String(limitParam), 10) || 200, 500) : 200;
 
   let entries = logBuffer.recent(limit);

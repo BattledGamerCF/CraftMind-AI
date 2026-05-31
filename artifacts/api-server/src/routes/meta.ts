@@ -31,15 +31,35 @@ router.get("/meta", (_req, res) => {
   });
 });
 
+/** Only allow the Ollama proxy to reach localhost/loopback addresses. */
+function isAllowedOllamaUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const host = u.hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * GET /api/ollama/models?baseUrl=http://localhost:11434
  * Proxies the Ollama model list so the browser avoids CORS issues.
+ * Only loopback addresses are permitted to prevent SSRF.
  */
 router.get("/ollama/models", async (req, res) => {
-  const baseUrl =
+  const rawUrl =
     typeof req.query["baseUrl"] === "string" && req.query["baseUrl"]
       ? req.query["baseUrl"]
       : "http://localhost:11434";
+
+  if (!isAllowedOllamaUrl(rawUrl)) {
+    res.status(400).json({ models: [], error: "baseUrl must point to localhost" });
+    return;
+  }
+
+  const baseUrl = rawUrl;
 
   try {
     const upstream = await fetch(`${baseUrl}/api/tags`, {

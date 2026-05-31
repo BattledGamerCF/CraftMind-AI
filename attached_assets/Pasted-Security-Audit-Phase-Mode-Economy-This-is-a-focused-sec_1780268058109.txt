@@ -1,0 +1,175 @@
+Security Audit Phase.
+
+Mode: Economy.
+
+This is a focused security review.
+
+Do NOT redesign architecture.
+
+Do NOT add major new systems.
+
+Do NOT add authentication unless it is already partially implemented.
+
+Do NOT add cloud services.
+
+Goal:
+
+Identify and fix realistic security issues that could affect a self-hosted Mindcraft deployment.
+
+--------------------------------------------------
+PHASE 1: ATTACK SURFACE INVENTORY
+--------------------------------------------------
+
+Create a complete list of:
+
+- HTTP endpoints
+- file read/write locations
+- launcher entry points
+- environment variable usage
+- persistence files
+- dashboard API calls
+
+Identify all externally reachable surfaces.
+
+--------------------------------------------------
+PHASE 2: API REVIEW
+--------------------------------------------------
+
+Audit every endpoint.
+
+Check for:
+
+- missing validation
+- unsafe input handling
+- unbounded request sizes
+- malformed JSON handling
+- resource exhaustion vectors
+- queue flooding
+- bot creation spam
+- command spam
+
+Fix only real issues.
+
+--------------------------------------------------
+PHASE 3: SECRET HANDLING
+--------------------------------------------------
+
+Audit:
+
+- API keys
+- environment variables
+- logs
+- telemetry
+- runtime endpoints
+
+Verify:
+
+- keys never appear in logs
+- keys never appear in API responses
+- keys never appear in dashboard data
+
+Mask anything sensitive.
+
+--------------------------------------------------
+PHASE 4: FILESYSTEM SAFETY
+--------------------------------------------------
+
+Audit all file operations.
+
+Check for:
+
+- path traversal
+- unsafe path concatenation
+- user-controlled filenames
+- unsafe restore behavior
+
+Verify persistence only reads and writes intended locations.
+
+--------------------------------------------------
+PHASE 5: DASHBOARD SECURITY
+--------------------------------------------------
+
+Review:
+
+- dashboard fetch calls
+- displayed data
+- user-supplied values
+
+Check for:
+
+- unsafe HTML rendering
+- script injection opportunities
+- unsafe URL handling
+
+Fix only verified issues.
+
+--------------------------------------------------
+PHASE 6: RESOURCE EXHAUSTION
+--------------------------------------------------
+
+Review:
+
+- task queue limits
+- memory growth
+- log growth
+- persistence growth
+- bot creation limits
+- polling frequency
+
+Verify existing caps actually work.
+
+Add limits only where missing.
+
+--------------------------------------------------
+PHASE 7: CORS AND NETWORK EXPOSURE
+--------------------------------------------------
+
+Verify:
+
+- intended bind addresses
+- CORS behavior
+- production serving mode
+- localhost assumptions
+
+Identify any endpoint that should not be exposed.
+
+--------------------------------------------------
+PHASE 8: DEPENDENCY REVIEW
+--------------------------------------------------
+
+Review direct project dependencies.
+
+Look for:
+
+- obviously unused packages
+- dangerous packages
+- duplicated functionality
+
+Do NOT perform major dependency migrations.
+
+--------------------------------------------------
+PHASE 9: SECURITY REPORT
+--------------------------------------------------
+
+Produce:
+
+CRITICAL
+HIGH
+MEDIUM
+LOW
+
+For each issue:
+
+- file
+- impact
+- fix applied
+
+If no fix was applied, explain why.
+
+Focus on practical security.
+
+Assume a normal self-hosted user running Mindcraft on their own machine.
+
+Avoid enterprise-only concerns.
+Avoid theoretical attacks requiring local code execution.
+Avoid architecture redesign.

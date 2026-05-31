@@ -3,9 +3,19 @@ import { botManager } from "../bot/BotManager.js";
 import { listStructures } from "../bot/structures/StructureRegistry.js";
 import { sharedWorldModel } from "../bot/core/SharedWorldModel.js";
 import type { CognitiveMode } from "../bot/types.js";
+import type { BotRole } from "../bot/core/SharedWorldModel.js";
 import { logger } from "../lib/logger.js";
+import { config } from "../config.js";
 
 const VALID_MODES = new Set<CognitiveMode>(["deterministic", "lightweight", "balanced", "auto", "deep-reasoning"]);
+const VALID_ROLES = new Set<BotRole>(["generalist", "miner", "builder", "guard", "scout", "farmer"]);
+
+function clampInt(v: unknown, min: number, max: number): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = Math.trunc(Number(v));
+  if (!isFinite(n)) return undefined;
+  return Math.max(min, Math.min(max, n));
+}
 
 const router: IRouter = Router();
 
@@ -40,16 +50,34 @@ router.post("/bots", async (req, res) => {
     return;
   }
 
+  if (botManager.count() >= config.bots.maxConcurrent) {
+    res.status(429).json({ error: `Bot limit reached (max ${config.bots.maxConcurrent}). Delete an existing bot first.` });
+    return;
+  }
+
+  const rawRole = typeof role === "string" ? role : "generalist";
+  const safeRole: BotRole = VALID_ROLES.has(rawRole as BotRole) ? (rawRole as BotRole) : "generalist";
+
+  const rawBehavior = behavior && typeof behavior === "object" ? behavior as Record<string, unknown> : {};
+  const safeBehavior = {
+    followDistance:  clampInt(rawBehavior["followDistance"],  1, 20),
+    chatCooldown:    clampInt(rawBehavior["chatCooldown"],    500, 30_000),
+    viewDistance:    clampInt(rawBehavior["viewDistance"],    4, 64),
+    autoEat:         typeof rawBehavior["autoEat"]    === "boolean" ? rawBehavior["autoEat"]    : undefined,
+    defendSelf:      typeof rawBehavior["defendSelf"] === "boolean" ? rawBehavior["defendSelf"] : undefined,
+    humanize:        typeof rawBehavior["humanize"]   === "boolean" ? rawBehavior["humanize"]   : undefined,
+  };
+
   try {
     const bot = await botManager.createBot({
       host,
-      port: typeof port === "number" ? port : 25565,
+      port: typeof port === "number" ? Math.max(1, Math.min(65535, Math.trunc(port))) : 25565,
       username,
       version: typeof version === "string" ? version : undefined,
       auth: auth === "microsoft" ? "microsoft" : "offline",
       llm: llm as Parameters<typeof botManager.createBot>[0]["llm"],
-      behavior: behavior as Parameters<typeof botManager.createBot>[0]["behavior"],
-      role: role as Parameters<typeof botManager.createBot>[0]["role"],
+      behavior: safeBehavior,
+      role: safeRole,
     });
 
     res.status(201).json({ bot: bot.getStatus() });
@@ -154,7 +182,7 @@ router.get("/bots/:id/memory", (req, res) => {
 router.get("/bots/:id/telemetry", (req, res) => {
   const bot = botManager.getBot(req.params["id"]!);
   if (!bot?.fastBrain) { res.status(404).json({ error: "Bot not found" }); return; }
-  const windowMs = Number(req.query["windowMs"] ?? 5 * 60_000);
+  const windowMs = Math.max(1_000, Math.min(Number(req.query["windowMs"] ?? 5 * 60_000), 24 * 60 * 60_000));
   res.json({
     stats: bot.fastBrain.telemetry.getStats(),
     failures: bot.fastBrain.telemetry.summarizeFailures(windowMs),
