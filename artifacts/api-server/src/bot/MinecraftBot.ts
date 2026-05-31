@@ -102,6 +102,9 @@ export class MinecraftBot {
           if (saved.habits) this.fastBrain!.habits.restore(saved.habits);
         }
 
+        // Apply creation-time playstyle (not persisted — always use config value on spawn)
+        if (this.config.playstyle) this.setPlaystyle(this.config.playstyle);
+
         // Autosave every 60 s
         this.autosaveInterval = setInterval(() => {
           this.persistence.scheduleSave(this.buildPersistedState());

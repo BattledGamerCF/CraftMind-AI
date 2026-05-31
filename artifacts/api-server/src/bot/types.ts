@@ -147,6 +147,8 @@ export interface CreateBotRequest {
   auth?: "offline" | "microsoft";
   llm: LLMConfig;
   behavior?: BehaviorConfig;
+  cognitiveMode?: CognitiveMode;
+  playstyle?: "companion" | "worker" | "adventurer" | "safe" | "auto";
 }
 
 export interface CommandRequest {

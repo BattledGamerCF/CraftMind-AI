@@ -27,6 +27,7 @@ class BotManager {
       llm: request.llm,
       behavior: { ...DEFAULT_BEHAVIOR, ...request.behavior },
       cognitiveMode: (request as BotConfig).cognitiveMode,
+      playstyle: (request as BotConfig).playstyle,
     };
 
     const bot = new MinecraftBot(id, config, request.role ?? "generalist");

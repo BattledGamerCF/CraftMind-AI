@@ -9,6 +9,7 @@ import { config } from "../config.js";
 
 const VALID_MODES = new Set<CognitiveMode>(["deterministic", "lightweight", "balanced", "auto", "deep-reasoning"]);
 const VALID_ROLES = new Set<BotRole>(["generalist", "miner", "builder", "guard", "scout", "farmer"]);
+const VALID_PLAYSTYLES = new Set(["companion", "worker", "adventurer", "safe", "auto"]);
 
 function clampInt(v: unknown, min: number, max: number): number | undefined {
   if (v === undefined || v === null) return undefined;
@@ -24,7 +25,7 @@ router.get("/bots", (_req, res) => {
 });
 
 router.post("/bots", async (req, res) => {
-  const { host, port, username, version, auth, llm, behavior, role } = req.body as Record<string, unknown>;
+  const { host, port, username, version, auth, llm, behavior, role, cognitiveMode, playstyle } = req.body as Record<string, unknown>;
 
   if (!host || typeof host !== "string") {
     res.status(400).json({ error: "host is required" });
@@ -58,6 +59,16 @@ router.post("/bots", async (req, res) => {
   const rawRole = typeof role === "string" ? role : "generalist";
   const safeRole: BotRole = VALID_ROLES.has(rawRole as BotRole) ? (rawRole as BotRole) : "generalist";
 
+  const rawCogMode = typeof cognitiveMode === "string" ? cognitiveMode : undefined;
+  const safeCogMode = rawCogMode && VALID_MODES.has(rawCogMode as CognitiveMode)
+    ? (rawCogMode as CognitiveMode)
+    : undefined;
+
+  const rawPlaystyle = typeof playstyle === "string" ? playstyle : undefined;
+  const safePlaystyle = rawPlaystyle && VALID_PLAYSTYLES.has(rawPlaystyle)
+    ? (rawPlaystyle as "companion" | "worker" | "adventurer" | "safe" | "auto")
+    : undefined;
+
   const rawBehavior = behavior && typeof behavior === "object" ? behavior as Record<string, unknown> : {};
   const safeBehavior = {
     followDistance:  clampInt(rawBehavior["followDistance"],  1, 20),
@@ -78,6 +89,8 @@ router.post("/bots", async (req, res) => {
       llm: llm as Parameters<typeof botManager.createBot>[0]["llm"],
       behavior: safeBehavior,
       role: safeRole,
+      cognitiveMode: safeCogMode,
+      playstyle: safePlaystyle,
     });
 
     res.status(201).json({ bot: bot.getStatus() });
@@ -223,8 +236,6 @@ router.get("/bots/:id/trust", (req, res) => {
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
   res.json({ trust: bot.getTrustSnapshot() });
 });
-
-const VALID_PLAYSTYLES = new Set(["companion", "worker", "adventurer", "safe", "auto"]);
 
 router.get("/bots/:id/playstyle", (req, res) => {
   const bot = botManager.getBot(req.params["id"]!);
