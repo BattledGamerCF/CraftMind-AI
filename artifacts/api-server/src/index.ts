@@ -3,6 +3,17 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { config } from "./config";
 
+// ── Global crash detection ──────────────────────────────────────────────────
+process.on("uncaughtException", (err, origin) => {
+  logger.fatal({ err, origin }, "Uncaught exception — process will exit");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error({ reason, promise: String(promise) }, "Unhandled promise rejection");
+  // Do not exit — log and continue; individual tasks handle their own failures.
+});
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

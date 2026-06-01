@@ -157,12 +157,22 @@ export class MovementSystem {
     await new Promise<void>((r) => setTimeout(r, 400));
   }
 
-  followPlayer(playerName: string, distance = 3) {
+  followPlayer(playerName: string, distance = 3): boolean {
     const pfBot = this.pfBot;
-    if (!pfBot || !this.goals) return;
+    if (!pfBot || !this.goals) {
+      logger.warn({ playerName }, "followPlayer: pathfinder not initialized");
+      return false;
+    }
 
     const player = this.bot.players[playerName];
-    if (!player?.entity) return;
+    if (!player) {
+      logger.warn({ playerName }, "followPlayer: player not in server player list");
+      return false;
+    }
+    if (!player.entity) {
+      logger.warn({ playerName }, "followPlayer: player entity not loaded (chunk not visible) — cannot set follow goal");
+      return false;
+    }
 
     try {
       const movements = this.getMovements();
@@ -172,8 +182,11 @@ export class MovementSystem {
       const goal = new g["GoalFollow"](player.entity, Math.round(distance));
       pfBot.pathfinder.setGoal(goal, true);
       this.active = true;
+      logger.info({ playerName, distance }, "followPlayer: goal set");
+      return true;
     } catch (err) {
-      logger.debug({ err }, "followPlayer error");
+      logger.warn({ err, playerName }, "followPlayer: failed to set goal");
+      return false;
     }
   }
 

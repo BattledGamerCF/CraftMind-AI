@@ -32,31 +32,47 @@ export class BuildingSystem {
   }
 
   async build(structure: Structure, origin: Vec3Like): Promise<void> {
-    if (this.building) return;
+    if (this.building) {
+      logger.warn({ structure: structure.name }, "Build already in progress — ignoring duplicate request");
+      return;
+    }
     this.building = true;
     this.stopRequested = false;
 
-    logger.debug({ structure: structure.name, origin }, "Building started");
+    logger.info({ structure: structure.name, origin }, "Building started");
 
     const sortedBlocks = this.sortBlocksByBuildOrder(structure.blocks);
+    let placed = 0;
+    let skipped = 0;
 
-    for (const sb of sortedBlocks) {
-      if (this.stopRequested) break;
+    try {
+      for (const sb of sortedBlocks) {
+        if (this.stopRequested) {
+          logger.info({ structure: structure.name, placed, skipped }, "Building stopped by request");
+          break;
+        }
 
-      const pos = {
-        x: Math.floor(origin.x) + sb.offset.x,
-        y: Math.floor(origin.y) + sb.offset.y,
-        z: Math.floor(origin.z) + sb.offset.z,
-      };
+        const pos = {
+          x: Math.floor(origin.x) + sb.offset.x,
+          y: Math.floor(origin.y) + sb.offset.y,
+          z: Math.floor(origin.z) + sb.offset.z,
+        };
 
-      await this.placeBlock(sb.blockName, pos);
+        const ok = await this.placeBlock(sb.blockName, pos);
+        if (ok) { placed++; } else { skipped++; }
 
-      const delay = randomBetween(400, 900);
-      await new Promise<void>((r) => setTimeout(r, delay));
+        const delay = randomBetween(400, 900);
+        await new Promise<void>((r) => setTimeout(r, delay));
+      }
+
+      logger.info({ structure: structure.name, placed, skipped }, "Building complete");
+    } catch (err) {
+      logger.error({ err, structure: structure.name, placed, skipped }, "Building failed with unexpected error");
+      throw err;
+    } finally {
+      // Always reset building flag — prevents the system getting stuck if an error is thrown
+      this.building = false;
     }
-
-    this.building = false;
-    logger.debug({ structure: structure.name }, "Building complete");
   }
 
   private sortBlocksByBuildOrder(blocks: StructureBlock[]): StructureBlock[] {

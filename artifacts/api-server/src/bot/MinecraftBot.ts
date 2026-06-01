@@ -152,13 +152,21 @@ export class MinecraftBot {
     const isAddressed =
       lowerMsg.includes(botName) || lowerMsg.startsWith("!") ||
       lowerMsg.startsWith("@all") || message.startsWith(".");
+
+    logger.info({ id: this.id, username, message, isAddressed }, "Chat received");
+
     if (!isAddressed) return;
 
     const cleanMessage = message
       .replace(new RegExp(botName, "gi"), "")
       .replace(/^[!.@]/, "")
       .trim();
-    if (!cleanMessage) return;
+    if (!cleanMessage) {
+      logger.debug({ id: this.id, username }, "Chat addressed but empty after cleaning — ignored");
+      return;
+    }
+
+    logger.info({ id: this.id, username, cleanMessage }, "Chat addressed — processing intent");
 
     const routeStart = Date.now();
 
@@ -172,12 +180,19 @@ export class MinecraftBot {
       configuredMode: this.slowBrain.getMode(),
     });
 
-    logger.debug({ username, effectiveMode: decision.effectiveMode, profile: decision.promptProfile }, "CognitiveRouter decision");
+    logger.info({
+      id: this.id,
+      username,
+      effectiveMode: decision.effectiveMode,
+      deterministicAllowed: decision.deterministicAllowed,
+      profile: decision.promptProfile,
+    }, "CognitiveRouter decision");
 
     // Cache lookup (skip for deep-reasoning — context too variable)
     if (decision.effectiveMode !== "deep-reasoning") {
       const cached = this.intentCache.get(cleanMessage);
       if (cached) {
+        logger.info({ id: this.id, username, intent: (cached as { intent?: string }).intent }, "Intent resolved from cache");
         this.recordTelemetry(cached, decision, routeStart, true);
         this.submitIntent(cached, username, cleanMessage);
         return;
@@ -188,6 +203,7 @@ export class MinecraftBot {
     if (decision.deterministicAllowed) {
       const det = CognitiveRouter.parseDeterministic(cleanMessage);
       if (det) {
+        logger.info({ id: this.id, username, intent: det.intent, target: det.target }, "Intent resolved deterministically");
         this.intentCache.set(cleanMessage, det);
         this.recordTelemetry(det, decision, routeStart, false);
         this.submitIntent(det, username, cleanMessage);
@@ -195,13 +211,16 @@ export class MinecraftBot {
       }
       // Deterministic parse failed — if mode is strictly deterministic, apply fallback
       if (decision.effectiveMode === "deterministic") {
+        logger.info({ id: this.id, username, cleanMessage }, "Deterministic parse failed — applying fallback");
         await this.applyFallback(decision.fallbackStrategy, username);
         return;
       }
       // lightweight: fall through to LLM
+      logger.debug({ id: this.id, username }, "Deterministic parse missed — falling through to LLM");
     }
 
     // LLM path
+    logger.info({ id: this.id, username, cleanMessage, effectiveMode: decision.effectiveMode }, "Sending to LLM");
     const budget = decision.memoryBudget;
     const episodicSummary = budget.episodicEvents > 0
       ? this.fastBrain.memory.episodic.recent(budget.episodicEvents)
@@ -228,19 +247,32 @@ export class MinecraftBot {
         semanticSummary,
       }, decision);
 
-      if (!intent) return;
+      if (!intent) {
+        logger.warn({ id: this.id, username, cleanMessage }, "LLM returned null intent — no action taken");
+        return;
+      }
+
+      logger.info({
+        id: this.id,
+        username,
+        intent: intent.intent,
+        confidence: intent.confidence,
+        source: intent.source,
+      }, "LLM intent received");
 
       // Confidence gating
       if (intent.confidence < CONFIDENCE_IGNORE_THRESHOLD) {
-        logger.debug({ confidence: intent.confidence }, "Intent ignored: confidence too low");
+        logger.info({ id: this.id, username, confidence: intent.confidence, threshold: CONFIDENCE_IGNORE_THRESHOLD }, "Intent ignored: confidence below ignore threshold");
         this.recordTelemetry(intent, decision, routeStart, false);
         return;
       }
 
       if (intent.confidence < CONFIDENCE_CLARIFY_THRESHOLD) {
+        logger.info({ id: this.id, username, confidence: intent.confidence, threshold: CONFIDENCE_CLARIFY_THRESHOLD }, "Intent low-confidence — trying deterministic downgrade");
         // Try deterministic downgrade before applying fallback strategy
         const det = CognitiveRouter.parseDeterministic(cleanMessage);
         if (det) {
+          logger.info({ id: this.id, username, intent: det.intent }, "Downgraded to deterministic intent");
           this.intentCache.set(cleanMessage, det);
           this.recordTelemetry(det, decision, routeStart, false);
           this.submitIntent(det, username, cleanMessage);
@@ -255,7 +287,7 @@ export class MinecraftBot {
       this.recordTelemetry(intent, decision, routeStart, false);
       this.submitIntent(intent, username, cleanMessage);
     } catch (err) {
-      logger.error({ err }, "Chat handling error");
+      logger.error({ err, id: this.id, username, cleanMessage }, "Chat handling error");
     }
   }
 

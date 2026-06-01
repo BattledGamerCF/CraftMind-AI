@@ -164,6 +164,7 @@ export class Arbitrator {
     const executor = this.executors.get(task.type);
     if (!executor) {
       task.failureReason = `no executor for type ${task.type}`;
+      logger.error({ type: task.type, id: task.id }, "No executor registered for task type");
       this.setStatus(task, "failed");
       this.tick();
       return;
@@ -172,6 +173,7 @@ export class Arbitrator {
     const abort = new AbortController();
     task.startedAt = Date.now();
     this.setStatus(task, "running");
+    logger.info({ id: task.id, type: task.type, priority: task.priority, goal: task.goal }, "Task started");
     this.telemetry?.recordTaskStart(task);
 
     const timeout = setTimeout(() => {
@@ -196,15 +198,22 @@ export class Arbitrator {
         } else if (task.retryCount < task.maxRetries) {
           task.retryCount++;
           task.status = "ready";
-          logger.debug({ id: task.id, retry: task.retryCount }, "Retrying task");
+          logger.warn({ id: task.id, type: task.type, retry: task.retryCount, err }, "Task failed — retrying");
         } else {
           task.failureReason = err instanceof Error ? err.message : String(err);
+          logger.error({ id: task.id, type: task.type, goal: task.goal, err: task.failureReason }, "Task failed");
           this.setStatus(task, "failed");
         }
       })
       .finally(() => {
         clearTimeout(timeout);
         task.completedAt = Date.now();
+        const durationMs = task.startedAt ? task.completedAt - task.startedAt : 0;
+        if (task.status === "succeeded") {
+          logger.info({ id: task.id, type: task.type, durationMs }, "Task succeeded");
+        } else if (task.status === "cancelled") {
+          logger.debug({ id: task.id, type: task.type, durationMs }, "Task cancelled");
+        }
         this.telemetry?.recordTaskComplete(task);
         this.onTaskComplete?.(task);
         this.current = null;

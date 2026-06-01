@@ -67,6 +67,9 @@ export class HumanizationSystem {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
     if (this.lookTimer) { clearTimeout(this.lookTimer); this.lookTimer = null; }
     if (this.alertnessTimer) { clearTimeout(this.alertnessTimer); this.alertnessTimer = null; }
+    // Clear any lingering control states (sneak, sprint, jump) that may have been
+    // set mid-animation and not yet cleared — prevents permanent-crouch loops.
+    try { this.bot.clearControlStates(); } catch { /* bot may be disconnected */ }
   }
 
   private scheduleIdleBehavior() {
@@ -219,13 +222,17 @@ export class HumanizationSystem {
 
     const dx = randomBetween(-0.5, 0.5);
     const dz = randomBetween(-0.5, 0.5);
-    this.bot.setControlState("sneak", true);
-    await this.bot.lookAt(
-      { x: pos.x + dx, y: pos.y, z: pos.z + dz } as Parameters<Bot["lookAt"]>[0],
-      false
-    );
-    await new Promise<void>((r) => setTimeout(r, randomInt(200, 500)));
-    this.bot.setControlState("sneak", false);
+    // Always release sneak in a finally block to prevent permanent-crouch if interrupted.
+    try {
+      this.bot.setControlState("sneak", true);
+      await this.bot.lookAt(
+        { x: pos.x + dx, y: pos.y, z: pos.z + dz } as Parameters<Bot["lookAt"]>[0],
+        false
+      );
+      await new Promise<void>((r) => setTimeout(r, randomInt(200, 500)));
+    } finally {
+      try { this.bot.setControlState("sneak", false); } catch { /* bot may be disconnected */ }
+    }
   }
 
   private async doJump() {

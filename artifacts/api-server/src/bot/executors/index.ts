@@ -113,11 +113,44 @@ export function createDefaultExecutors(deps: ExecutorDeps): TaskExecutor[] {
       type: "follow_player",
       async execute(task, signal) {
         const target = task.target;
-        if (!target) return;
-        deps.movement.followPlayer(target, deps.playstyle?.followDistance ?? 3);
+        if (!target) { logger.warn("follow_player: no target specified"); return; }
+
+        const distance = deps.playstyle?.followDistance ?? 3;
+
+        // Wait up to 30 s for the player entity to load (they may be in an unloaded chunk)
+        const ENTITY_WAIT_MS = 30_000;
+        const ENTITY_POLL_MS = 2_000;
+        const entityWaitStart = Date.now();
+        let followStarted = false;
+
+        while (!signal.aborted) {
+          const ok = deps.movement.followPlayer(target, distance);
+          if (ok) { followStarted = true; break; }
+
+          const elapsed = Date.now() - entityWaitStart;
+          if (elapsed >= ENTITY_WAIT_MS) {
+            logger.warn({ target, elapsedMs: elapsed }, "follow_player: player entity never became visible — aborting follow");
+            return;
+          }
+          logger.debug({ target, elapsedMs: elapsed }, "follow_player: waiting for player entity to load...");
+          await new Promise<void>((r) => setTimeout(r, ENTITY_POLL_MS));
+        }
+
+        if (!followStarted) return;
+
+        // Re-apply goal every 5 s in case the entity reference becomes stale
+        const REAPPLY_MS = 5_000;
         await new Promise<void>((resolve) => {
           if (signal.aborted) { resolve(); return; }
-          signal.addEventListener("abort", () => { deps.movement.stop(); resolve(); }, { once: true });
+          const interval = setInterval(() => {
+            if (signal.aborted) { clearInterval(interval); resolve(); return; }
+            deps.movement.followPlayer(target, distance);
+          }, REAPPLY_MS);
+          signal.addEventListener("abort", () => {
+            clearInterval(interval);
+            deps.movement.stop();
+            resolve();
+          }, { once: true });
         });
       },
     },
