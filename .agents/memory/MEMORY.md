@@ -1,1 +1,0 @@
-- [Mindcraft architecture & conventions](mindcraft-arch.md) — launcher design, pino ring buffer, dashboard conventions, CORS setup, and hard constraints for the usability transformation.
